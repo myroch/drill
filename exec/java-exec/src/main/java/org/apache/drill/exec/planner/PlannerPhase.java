@@ -63,6 +63,7 @@ import org.apache.drill.exec.planner.logical.DrillUnionAllRule;
 import org.apache.drill.exec.planner.logical.DrillValuesRule;
 import org.apache.drill.exec.planner.logical.DrillWindowRule;
 import org.apache.drill.exec.planner.logical.partition.ParquetPruneScanRule;
+import org.apache.drill.exec.planner.logical.partition.ParquetStatisticsRelOptRule;
 import org.apache.drill.exec.planner.logical.partition.PruneScanRule;
 import org.apache.drill.exec.planner.physical.ConvertCountToDirectScan;
 import org.apache.drill.exec.planner.physical.FilterPrule;
@@ -94,6 +95,7 @@ public enum PlannerPhase {
   //private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillRuleSets.class);
 
   LOGICAL_PRUNE_AND_JOIN("Loigcal Planning (with join and partition pruning)") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(
           getDrillBasicRules(context),
@@ -105,6 +107,7 @@ public enum PlannerPhase {
   },
 
   WINDOW_REWRITE("Window Function rewrites") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return RuleSets.ofList(
           ReduceExpressionsRule.CALC_INSTANCE,
@@ -114,6 +117,7 @@ public enum PlannerPhase {
   },
 
   LOGICAL_PRUNE("Logical Planning (with partition pruning)") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(
           getDrillBasicRules(context),
@@ -124,6 +128,7 @@ public enum PlannerPhase {
   },
 
   JOIN_PLANNING("LOPT Join Planning") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(
           RuleSets.ofList(
@@ -136,18 +141,21 @@ public enum PlannerPhase {
   },
 
   PARTITION_PRUNING("Partition Prune Planning") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(getPruneScanRules(context), getStorageRules(context, plugins, this));
     }
   },
 
   DIRECTORY_PRUNING("Directory Prune Planning") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(getDirPruneScanRules(context), getStorageRules(context, plugins, this));
     }
   },
 
   LOGICAL("Logical Planning (no pruning or join).") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(
           PlannerPhase.getDrillBasicRules(context),
@@ -157,6 +165,7 @@ public enum PlannerPhase {
   },
 
   PHYSICAL("Physical Planning") {
+    @Override
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(
           PlannerPhase.getPhysicalRules(context),
@@ -324,6 +333,7 @@ public enum PlannerPhase {
             PruneScanRule.getDirFilterOnScan(optimizerRulesContext),
             ParquetPruneScanRule.getFilterOnProjectParquet(optimizerRulesContext),
             ParquetPruneScanRule.getFilterOnScanParquet(optimizerRulesContext),
+            ParquetStatisticsRelOptRule.getInstance(optimizerRulesContext),
             DrillPushLimitToScanRule.LIMIT_ON_SCAN,
             DrillPushLimitToScanRule.LIMIT_ON_PROJECT
         )

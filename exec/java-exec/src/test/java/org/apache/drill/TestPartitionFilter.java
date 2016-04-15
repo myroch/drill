@@ -202,7 +202,7 @@ public class TestPartitionFilter extends PlanTestBase {
   @Test // Parquet: one side of OR has partition filter only, other side has both partition filter and non-partition filter
   public void testPartitionFilter6_Parquet_from_CTAS() throws Exception {
     String query = String.format("select * from dfs_test.tmp.parquet where (yr=1995 and o_totalprice < 40000) or yr=1996", TEST_RES_PATH);
-    testIncludeFilter(query, 8, "Filter", 46);
+    testIncludeFilter(query, 6, "Filter", 46);
   }
 
   @Test // Parquet: trivial case with 1 partition filter
@@ -232,13 +232,13 @@ public class TestPartitionFilter extends PlanTestBase {
   @Test // Parquet: partition filter on subdirectory only plus non-partition filter
   public void testPartitionFilter9_Parquet() throws Exception {
     String query = String.format("select * from dfs_test.`%s/multilevel/parquet` where dir1 in ('Q1','Q4') and o_totalprice < 40000", TEST_RES_PATH);
-    testIncludeFilter(query, 6, "Filter", 9);
+    testIncludeFilter(query, 4, "Filter", 9);
   }
 
   @Test
   public void testPartitionFilter9_Parquet_from_CTAS() throws Exception {
     String query = String.format("select * from dfs_test.tmp.parquet where qrtr in ('Q1','Q4') and o_totalprice < 40000", TEST_RES_PATH);
-    testIncludeFilter(query, 6, "Filter", 9);
+    testIncludeFilter(query, 4, "Filter", 9);
   }
 
   @Test
@@ -272,7 +272,7 @@ public class TestPartitionFilter extends PlanTestBase {
   public void testMainQueryFilterRegularColumn() throws Exception {
     String root = FileUtils.getResourceAsFile("/multilevel/parquet").toURI().toString();
     String query =  String.format("select * from (select dir0, o_custkey from dfs_test.`%s` where dir0='1994' and o_custkey = 10) t limit 0", root);
-    testIncludeFilter(query, 4, "Filter", 0);
+    testIncludeFilter(query, 1, "Filter", 0);
   }
 
   @Test // see DRILL-2852 and DRILL-3591
