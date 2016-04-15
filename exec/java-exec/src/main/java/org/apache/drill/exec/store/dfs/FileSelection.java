@@ -19,11 +19,14 @@ package org.apache.drill.exec.store.dfs;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.BitSet;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Nullable;
+
+import org.apache.drill.common.exceptions.DrillRuntimeException;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.Path;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
@@ -32,16 +35,12 @@ import com.google.common.base.Strings;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
-import org.apache.drill.common.exceptions.DrillRuntimeException;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.Path;
-
 /**
  * Jackson serializable description of a file selection.
  */
 public class FileSelection {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(FileSelection.class);
-  private static final String PATH_SEPARATOR = System.getProperty("file.separator");
+  private static final String PATH_SEPARATOR = "/";
   private static final String WILD_CARD = "*";
 
   private List<FileStatus> statuses;

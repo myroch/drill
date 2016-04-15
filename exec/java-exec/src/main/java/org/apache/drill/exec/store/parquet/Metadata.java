@@ -337,19 +337,15 @@ public class Metadata {
           parquetTableMetadata.columnTypeInfo = new ConcurrentHashMap<>();
         }
         // Save the column schema info. We'll merge it into one list
-        parquetTableMetadata.columnTypeInfo
-            .put(new ColumnTypeMetadata_v2.Key(columnTypeMetadata.name), columnTypeMetadata);
+        parquetTableMetadata.columnTypeInfo.put(new ColumnTypeMetadata_v2.Key(columnTypeMetadata.name),
+            columnTypeMetadata);
         if (statsAvailable) {
-          // Write stats only if minVal==maxVal. Also, we then store only maxVal
-          Object mxValue = null;
-          if (stats.genericGetMax() != null && stats.genericGetMin() != null && stats.genericGetMax()
-              .equals(stats.genericGetMin())) {
-            mxValue = stats.genericGetMax();
-          }
-          columnMetadata =
-              new ColumnMetadata_v2(columnTypeMetadata.name, col.getType(), mxValue, stats.getNumNulls());
+          Object minValue = stats.genericGetMin();
+          Object maxValue = stats.genericGetMax();
+          columnMetadata = new ColumnMetadata_v2(columnTypeMetadata.name, col.getType(), minValue, maxValue,
+              stats.getNumNulls());
         } else {
-          columnMetadata = new ColumnMetadata_v2(columnTypeMetadata.name, col.getType(), null, null);
+          columnMetadata = new ColumnMetadata_v2(columnTypeMetadata.name, col.getType(), null, null, null);
         }
         columnMetadataList.add(columnMetadata);
         length += col.getTotalSize();
@@ -496,6 +492,7 @@ public class Metadata {
 
     @JsonIgnore public abstract OriginalType getOriginalType(String[] columnName);
 
+    @Override
     @JsonIgnore public abstract ParquetTableMetadataBase clone();
   }
 
@@ -529,6 +526,8 @@ public class Metadata {
     public abstract boolean hasSingleValue();
 
     public abstract Object getMaxValue();
+
+    public abstract Object getMinValue();
 
     public abstract PrimitiveTypeName getPrimitiveType();
 
@@ -767,7 +766,9 @@ public class Metadata {
       return max;
     }
 
-
+    @Override public Object getMinValue() {
+      return min;
+    }
   }
 
   /**
@@ -1002,7 +1003,7 @@ public class Metadata {
     @JsonProperty public String[] name;
     @JsonProperty public Long nulls;
 
-    public Object mxValue;
+    public Object minValue, maxValue;
 
     @JsonIgnore private PrimitiveTypeName primitiveType;
 
@@ -1010,15 +1011,20 @@ public class Metadata {
       super();
     }
 
-    public ColumnMetadata_v2(String[] name, PrimitiveTypeName primitiveType, Object mxValue, Long nulls) {
+    public ColumnMetadata_v2(String[] name, PrimitiveTypeName primitiveType, Object minValue, Object maxValue, Long nulls) {
       this.name = name;
-      this.mxValue = mxValue;
+      this.minValue = minValue;
+      this.maxValue = maxValue;
       this.nulls = nulls;
       this.primitiveType = primitiveType;
     }
 
-    @JsonProperty(value = "mxValue") public void setMax(Object mxValue) {
-      this.mxValue = mxValue;
+    @JsonProperty(value = "maxValue") public void setMax(Object maxValue) {
+      this.maxValue = maxValue;
+    }
+
+    @JsonProperty(value = "minValue") public void setMin(Object minValue) {
+        this.minValue = minValue;
     }
 
     @Override public String[] getName() {
@@ -1031,11 +1037,15 @@ public class Metadata {
 
     @Override
     public boolean hasSingleValue() {
-      return (mxValue != null);
+      return minValue != null && maxValue != null && minValue.equals(maxValue);
+    }
+
+    @Override public Object getMinValue() {
+      return minValue;
     }
 
     @Override public Object getMaxValue() {
-      return mxValue;
+      return maxValue;
     }
 
     @Override public PrimitiveTypeName getPrimitiveType() {
@@ -1065,14 +1075,23 @@ public class Metadata {
           jgen.writeString(n);
         }
         jgen.writeEndArray();
-        if (value.mxValue != null) {
+        if (value.maxValue != null) {
           Object val;
-          if (value.primitiveType == PrimitiveTypeName.BINARY && value.mxValue != null) {
-            val = new String(((Binary) value.mxValue).getBytes());
+          if (value.primitiveType == PrimitiveTypeName.BINARY && value.maxValue != null) {
+            val = new String(((Binary) value.maxValue).getBytes());
           } else {
-            val = value.mxValue;
+            val = value.maxValue;
           }
-          jgen.writeObjectField("mxValue", val);
+          jgen.writeObjectField("maxValue", val);
+        }
+        if (value.minValue != null) {
+          Object val;
+          if (value.primitiveType == PrimitiveTypeName.BINARY && value.minValue != null) {
+            val = new String(((Binary) value.minValue).getBytes());
+          } else {
+            val = value.minValue;
+          }
+          jgen.writeObjectField("minValue", val);
         }
         if (value.nulls != null) {
           jgen.writeObjectField("nulls", value.nulls);
@@ -1080,8 +1099,6 @@ public class Metadata {
         jgen.writeEndObject();
       }
     }
-
   }
-
 }
 

@@ -100,6 +100,9 @@ import com.google.common.collect.Sets;
 public class ParquetGroupScan extends AbstractFileGroupScan {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ParquetGroupScan.class);
 
+  public static final String SUFFIX_MIN = "_min";
+  public static final String SUFFIX_MAX = "_max";
+
   private final List<ReadEntryWithPath> entries;
   private final ParquetFormatPlugin formatPlugin;
   private final ParquetFormatConfig formatConfig;
@@ -269,10 +272,11 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
    * potential partition column now no longer qualifies, so it needs to be removed from the list.
    * @return whether column is a potential partition column
    */
-  private boolean checkForPartitionColumn(ColumnMetadata columnMetadata, boolean first) {
-    SchemaPath schemaPath = SchemaPath.getCompoundPath(columnMetadata.getName());
+  private boolean checkForPartitionColumn(ColumnMetadata columnMetadata, boolean first, SchemaPath schemaPath,
+      SchemaPath schemaPathMin, SchemaPath schemaPathMax) {
     final PrimitiveTypeName primitiveType;
     final OriginalType originalType;
+    boolean result = false;
     if (this.parquetTableMetadata.hasColumnMetadata()) {
       primitiveType = this.parquetTableMetadata.getPrimitiveType(columnMetadata.getName());
       originalType = this.parquetTableMetadata.getOriginalType(columnMetadata.getName());
@@ -281,27 +285,53 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       originalType = columnMetadata.getOriginalType();
     }
     if (first) {
+      MajorType type = getType(primitiveType, originalType);
       if (hasSingleValue(columnMetadata)) {
-        columnTypeMap.put(schemaPath, getType(primitiveType, originalType));
-        return true;
-      } else {
-        return false;
+        columnTypeMap.put(schemaPath, type);
+        result = true;
+      }
+      if (hasStatistics(columnMetadata)) {
+        columnTypeMap.put(schemaPathMin, type);
+        columnTypeMap.put(schemaPathMax, type);
+        result = true;
       }
     } else {
-      if (!columnTypeMap.keySet().contains(schemaPath)) {
-        return false;
-      } else {
+      if (columnTypeMap.containsKey(schemaPath)) {
         if (!hasSingleValue(columnMetadata)) {
           columnTypeMap.remove(schemaPath);
-          return false;
-        }
-        if (!getType(primitiveType, originalType).equals(columnTypeMap.get(schemaPath))) {
+        } else if (!getType(primitiveType, originalType).equals(columnTypeMap.get(schemaPath))) {
           columnTypeMap.remove(schemaPath);
-          return false;
+        } else {
+          result = true;
+        }
+      }
+      if (columnTypeMap.containsKey(schemaPathMin)) {
+        if (!hasStatistics(columnMetadata)) {
+          columnTypeMap.remove(schemaPathMin);
+          columnTypeMap.remove(schemaPathMax);
+        } else if (!getType(primitiveType, originalType).equals(columnTypeMap.get(schemaPathMin))) {
+          columnTypeMap.remove(schemaPathMin);
+          columnTypeMap.remove(schemaPathMax);
+        } else {
+          result = true;
         }
       }
     }
-    return true;
+    return result;
+  }
+
+  private SchemaPath getSchemaPathWithSuffix(String[] name, String suffix) {
+      if (name == null) {
+          return null;
+      }
+      int len = name.length;
+      if (len == 0) {
+          return null;
+      }
+      String[] newName = new String[len];
+      System.arraycopy(name, 0, newName, 0, len);
+      newName[len - 1] = name[len - 1] + suffix;
+      return SchemaPath.getCompoundPath(newName);
   }
 
   private MajorType getType(PrimitiveTypeName type, OriginalType originalType) {
@@ -329,6 +359,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
           return Types.optional(MinorType.TINYINT);
         case INT_16:
           return Types.optional(MinorType.SMALLINT);
+        default:
+          // Should never hit this
+          throw new UnsupportedOperationException("Unsupported type:" + type);
       }
     }
 
@@ -353,8 +386,13 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     }
   }
 
+  private boolean hasStatistics(ColumnMetadata columnChunkMetaData) {
+    return (columnChunkMetaData != null) && (columnChunkMetaData.getMinValue() != null)
+        && (columnChunkMetaData.getMaxValue() != null);
+  }
+
   private boolean hasSingleValue(ColumnMetadata columnChunkMetaData) {
-    // ColumnMetadata will have a non-null value iff the minValue and the maxValue for the
+    // ColumnMetadata will have a non-null value if the minValue and the maxValue for the
     // rowgroup are the same
     return (columnChunkMetaData != null) && (columnChunkMetaData.hasSingleValue());
   }
@@ -389,60 +427,100 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       case INT: {
         NullableIntVector intVector = (NullableIntVector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        intVector.getMutator().setSafe(index, value);
+        if (value != null) {
+          intVector.getMutator().setSafe(index, value);
+        } else {
+          intVector.getMutator().setNull(index);
+        }
         return;
       }
       case SMALLINT: {
         NullableSmallIntVector smallIntVector = (NullableSmallIntVector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        smallIntVector.getMutator().setSafe(index, value.shortValue());
+        if (value != null) {
+          smallIntVector.getMutator().setSafe(index, value.shortValue());
+        } else {
+          smallIntVector.getMutator().setNull(index);
+        }
         return;
       }
       case TINYINT: {
         NullableTinyIntVector tinyIntVector = (NullableTinyIntVector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        tinyIntVector.getMutator().setSafe(index, value.byteValue());
+        if (value != null) {
+          tinyIntVector.getMutator().setSafe(index, value.byteValue());
+        } else {
+          tinyIntVector.getMutator().setNull(index);
+        }
         return;
       }
       case UINT1: {
         NullableUInt1Vector intVector = (NullableUInt1Vector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        intVector.getMutator().setSafe(index, value.byteValue());
+        if (value != null) {
+          intVector.getMutator().setSafe(index, value.byteValue());
+        } else {
+          intVector.getMutator().setNull(index);
+        }
         return;
       }
       case UINT2: {
         NullableUInt2Vector intVector = (NullableUInt2Vector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        intVector.getMutator().setSafe(index, (char) value.shortValue());
+        if (value != null) {
+          intVector.getMutator().setSafe(index, (char) value.shortValue());
+        } else {
+          intVector.getMutator().setNull(index);
+        }
         return;
       }
       case UINT4: {
         NullableUInt4Vector intVector = (NullableUInt4Vector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        intVector.getMutator().setSafe(index, value);
+        if (value != null) {
+          intVector.getMutator().setSafe(index, value);
+        } else {
+          intVector.getMutator().setNull(index);
+        }
         return;
       }
       case BIGINT: {
         NullableBigIntVector bigIntVector = (NullableBigIntVector) v;
         Long value = (Long) partitionValueMap.get(f).get(column);
-        bigIntVector.getMutator().setSafe(index, value);
+        if (value != null) {
+          bigIntVector.getMutator().setSafe(index, value);
+        } else {
+          bigIntVector.getMutator().setNull(index);
+        }
         return;
       }
       case FLOAT4: {
         NullableFloat4Vector float4Vector = (NullableFloat4Vector) v;
         Float value = (Float) partitionValueMap.get(f).get(column);
-        float4Vector.getMutator().setSafe(index, value);
+        if (value != null) {
+          float4Vector.getMutator().setSafe(index, value);
+        } else {
+          float4Vector.getMutator().setNull(index);
+        }
         return;
       }
       case FLOAT8: {
         NullableFloat8Vector float8Vector = (NullableFloat8Vector) v;
         Double value = (Double) partitionValueMap.get(f).get(column);
-        float8Vector.getMutator().setSafe(index, value);
+        if (value != null) {
+          float8Vector.getMutator().setSafe(index, value);
+        } else {
+          float8Vector.getMutator().setNull(index);
+        }
         return;
       }
       case VARBINARY: {
         NullableVarBinaryVector varBinaryVector = (NullableVarBinaryVector) v;
         Object s = partitionValueMap.get(f).get(column);
+        if (s == null) {
+          varBinaryVector.getMutator().setNull(index);
+          return;
+        }
         byte[] bytes;
         if (s instanceof Binary) {
           bytes = ((Binary) s).getBytes();
@@ -459,30 +537,50 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       case DECIMAL18: {
         NullableDecimal18Vector decimalVector = (NullableDecimal18Vector) v;
         Long value = (Long) partitionValueMap.get(f).get(column);
-        decimalVector.getMutator().setSafe(index, value);
+        if (value != null) {
+          decimalVector.getMutator().setSafe(index, value);
+        } else {
+          decimalVector.getMutator().setNull(index);
+        }
         return;
       }
       case DATE: {
         NullableDateVector dateVector = (NullableDateVector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        dateVector.getMutator().setSafe(index, DateTimeUtils.fromJulianDay(value - ParquetOutputRecordWriter.JULIAN_DAY_EPOC - 0.5));
+        if (value != null) {
+          dateVector.getMutator().setSafe(index, DateTimeUtils.fromJulianDay(value - ParquetOutputRecordWriter.JULIAN_DAY_EPOC - 0.5));
+        } else {
+          dateVector.getMutator().setNull(index);
+        }
         return;
       }
       case TIME: {
         NullableTimeVector timeVector = (NullableTimeVector) v;
         Integer value = (Integer) partitionValueMap.get(f).get(column);
-        timeVector.getMutator().setSafe(index, value);
+        if (value != null) {
+          timeVector.getMutator().setSafe(index, value);
+        } else {
+          timeVector.getMutator().setNull(index);
+        }
         return;
       }
       case TIMESTAMP: {
         NullableTimeStampVector timeStampVector = (NullableTimeStampVector) v;
         Long value = (Long) partitionValueMap.get(f).get(column);
-        timeStampVector.getMutator().setSafe(index, value);
+        if (value != null) {
+          timeStampVector.getMutator().setSafe(index, value);
+        } else {
+          timeStampVector.getMutator().setNull(index);
+        }
         return;
       }
       case VARCHAR: {
         NullableVarCharVector varCharVector = (NullableVarCharVector) v;
         Object s = partitionValueMap.get(f).get(column);
+        if (s == null) {
+          varCharVector.getMutator().setNull(index);
+          return;
+        }
         byte[] bytes;
         if (s instanceof String) { // if the metadata was read from a JSON cache file it maybe a string type
           bytes = ((String) s).getBytes();
@@ -505,7 +603,6 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
 
     private EndpointByteMap byteMap;
     private int rowGroupIndex;
-    private String root;
     private long rowCount;  // rowCount = -1 indicates to include all rows.
 
     @JsonCreator
@@ -717,29 +814,116 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
               columnValueCounts.put(schemaPath, GroupScan.NO_COLUMN_STATS);
             }
           }
-          boolean partitionColumn = checkForPartitionColumn(column, first);
-          if (partitionColumn) {
+          SchemaPath schemaPathMin = getSchemaPathWithSuffix(column.getName(), SUFFIX_MIN);
+          SchemaPath schemaPathMax = getSchemaPathWithSuffix(column.getName(), SUFFIX_MAX);
+          if (checkForPartitionColumn(column, first, schemaPath, schemaPathMin, schemaPathMax)) {
             Map<SchemaPath, Object> map = partitionValueMap.get(file.getPath());
             if (map == null) {
               map = Maps.newHashMap();
               partitionValueMap.put(file.getPath(), map);
             }
-            Object value = map.get(schemaPath);
-            Object currentValue = column.getMaxValue();
-            if (value != null) {
-              if (value != currentValue) {
-                columnTypeMap.remove(schemaPath);
+            if (hasSingleValue(column)) {
+              Object value = map.get(schemaPath);
+              Object currentValue = column.getMaxValue();
+              if (value != null) {
+                if (value != currentValue) {
+                  columnTypeMap.remove(schemaPath);
+                }
+              } else {
+                map.put(schemaPath, currentValue);
               }
-            } else {
-              map.put(schemaPath, currentValue);
             }
-          } else {
-            columnTypeMap.remove(schemaPath);
+            if (hasStatistics(column)) {
+              Object minValue = map.get(schemaPathMin);
+              Object minCurrentValue = column.getMinValue();
+              Object maxValue = map.get(schemaPathMax);
+              Object maxCurrentValue = column.getMaxValue();
+              map.put(schemaPathMin, getMinValue(minValue, minCurrentValue));
+              map.put(schemaPathMax, getMaxValue(maxValue, maxCurrentValue));
+            }
           }
         }
         this.rowCount += rowGroup.getRowCount();
         first = false;
       }
+    }
+  }
+
+  private Object getMinValue(Object val1, Object val2) {
+    if (val1 == null) {
+      return val2;
+    }
+    if (val2 == null) {
+      return val1;
+    }
+    if (val1.equals(val2)) {
+      return val1;
+    }
+    int result = compare(val1, val2);
+    if (result < 0) {
+      return val1;
+    } else {
+      return val2;
+    }
+  }
+
+  private Object getMaxValue(Object val1, Object val2) {
+    if (val1 == null) {
+      return val2;
+    }
+    if (val2 == null) {
+      return val1;
+    }
+    if (val1.equals(val2)) {
+      return val1;
+    }
+    int result = compare(val1, val2);
+    if (result > 0) {
+      return val1;
+    } else {
+      return val2;
+    }
+  }
+
+  private int compare(Object val1, Object val2) {
+    if (val1 instanceof Binary || val1 instanceof String || val1 instanceof byte[]) {
+      Binary b1 = this.getBinary(val1);
+      Binary b2 = this.getBinary(val2);
+      return b1.compareTo(b2);
+    } else if (val1 instanceof Integer) {
+      Integer num1 = (Integer) val1;
+      Integer num2 = (Integer) val2;
+      return num1.compareTo(num2);
+    } else if (val1 instanceof Long) {
+      Long num1 = (Long) val1;
+      Long num2 = (Long) val2;
+      return num1.compareTo(num2);
+    } else if (val1 instanceof Float) {
+      Float num1 = (Float) val1;
+      Float num2 = (Float) val2;
+      return num1.compareTo(num2);
+    } else if (val1 instanceof Double) {
+      Double num1 = (Double) val1;
+      Double num2 = (Double) val2;
+      return num1.compareTo(num2);
+    } else if (val1 instanceof Long) {
+      Long num1 = (Long) val1;
+      Long num2 = (Long) val2;
+      return num1.compareTo(num2);
+    } else {
+      throw new UnsupportedOperationException("Unable to create column data for type: " + val1.getClass());
+    }
+  }
+
+  private Binary getBinary(Object value) {
+    if (value instanceof Binary) {
+      return (Binary) value;
+    } else if (value instanceof String) {
+      return Binary.fromString((String) value);
+    } else if (value instanceof byte[]) {
+      return Binary.fromConstantByteArray((byte[]) value);
+    } else {
+      throw new UnsupportedOperationException("Not binary type: " + value.getClass());
     }
   }
 
@@ -779,7 +963,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     }
   }
 
-  @Override
+    @Override
   public void applyAssignments(List<DrillbitEndpoint> incomingEndpoints) throws PhysicalOperatorSetupException {
 
     this.mappings = AssignmentCreator.getMappings(incomingEndpoints, rowGroupInfos);
@@ -855,7 +1039,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
   public FileGroupScan clone(FileSelection selection) throws IOException {
     ParquetGroupScan newScan = new ParquetGroupScan(this);
     newScan.modifyFileSelection(selection);
-    newScan.init();
+    newScan.columnTypeMap.clear(); // clear partitions
+    newScan.partitionValueMap.clear();
+    newScan.init(); // initialize partitions again
     return newScan;
   }
 
