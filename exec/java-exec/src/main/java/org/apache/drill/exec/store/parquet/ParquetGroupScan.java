@@ -426,9 +426,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     switch (type) {
       case INT: {
         NullableIntVector intVector = (NullableIntVector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          intVector.getMutator().setSafe(index, value);
+          intVector.getMutator().setSafe(index, value.intValue());
         } else {
           intVector.getMutator().setNull(index);
         }
@@ -436,7 +436,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case SMALLINT: {
         NullableSmallIntVector smallIntVector = (NullableSmallIntVector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
           smallIntVector.getMutator().setSafe(index, value.shortValue());
         } else {
@@ -446,7 +446,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case TINYINT: {
         NullableTinyIntVector tinyIntVector = (NullableTinyIntVector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
           tinyIntVector.getMutator().setSafe(index, value.byteValue());
         } else {
@@ -456,7 +456,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case UINT1: {
         NullableUInt1Vector intVector = (NullableUInt1Vector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
           intVector.getMutator().setSafe(index, value.byteValue());
         } else {
@@ -466,7 +466,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case UINT2: {
         NullableUInt2Vector intVector = (NullableUInt2Vector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
           intVector.getMutator().setSafe(index, (char) value.shortValue());
         } else {
@@ -476,9 +476,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case UINT4: {
         NullableUInt4Vector intVector = (NullableUInt4Vector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          intVector.getMutator().setSafe(index, value);
+          intVector.getMutator().setSafe(index, value.intValue());
         } else {
           intVector.getMutator().setNull(index);
         }
@@ -486,9 +486,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case BIGINT: {
         NullableBigIntVector bigIntVector = (NullableBigIntVector) v;
-        Long value = (Long) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          bigIntVector.getMutator().setSafe(index, value);
+          bigIntVector.getMutator().setSafe(index, value.longValue());
         } else {
           bigIntVector.getMutator().setNull(index);
         }
@@ -496,9 +496,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case FLOAT4: {
         NullableFloat4Vector float4Vector = (NullableFloat4Vector) v;
-        Float value = (Float) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          float4Vector.getMutator().setSafe(index, value);
+          float4Vector.getMutator().setSafe(index, value.floatValue());
         } else {
           float4Vector.getMutator().setNull(index);
         }
@@ -506,9 +506,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case FLOAT8: {
         NullableFloat8Vector float8Vector = (NullableFloat8Vector) v;
-        Double value = (Double) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          float8Vector.getMutator().setSafe(index, value);
+          float8Vector.getMutator().setSafe(index, value.doubleValue());
         } else {
           float8Vector.getMutator().setNull(index);
         }
@@ -536,9 +536,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case DECIMAL18: {
         NullableDecimal18Vector decimalVector = (NullableDecimal18Vector) v;
-        Long value = (Long) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          decimalVector.getMutator().setSafe(index, value);
+          decimalVector.getMutator().setSafe(index, value.longValue());
         } else {
           decimalVector.getMutator().setNull(index);
         }
@@ -546,9 +546,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case DATE: {
         NullableDateVector dateVector = (NullableDateVector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          dateVector.getMutator().setSafe(index, DateTimeUtils.fromJulianDay(value - ParquetOutputRecordWriter.JULIAN_DAY_EPOC - 0.5));
+          dateVector.getMutator().setSafe(index, DateTimeUtils.fromJulianDay(value.intValue() - ParquetOutputRecordWriter.JULIAN_DAY_EPOC - 0.5));
         } else {
           dateVector.getMutator().setNull(index);
         }
@@ -556,9 +556,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case TIME: {
         NullableTimeVector timeVector = (NullableTimeVector) v;
-        Integer value = (Integer) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          timeVector.getMutator().setSafe(index, value);
+          timeVector.getMutator().setSafe(index, value.intValue());
         } else {
           timeVector.getMutator().setNull(index);
         }
@@ -566,9 +566,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       case TIMESTAMP: {
         NullableTimeStampVector timeStampVector = (NullableTimeStampVector) v;
-        Long value = (Long) partitionValueMap.get(f).get(column);
+        Number value = (Number) partitionValueMap.get(f).get(column);
         if (value != null) {
-          timeStampVector.getMutator().setSafe(index, value);
+          timeStampVector.getMutator().setSafe(index, value.longValue());
         } else {
           timeStampVector.getMutator().setNull(index);
         }
