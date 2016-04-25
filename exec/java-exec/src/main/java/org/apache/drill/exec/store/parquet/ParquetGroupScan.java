@@ -799,8 +799,17 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
               Object minCurrentValue = column.getMinValue();
               Object maxValue = map.get(schemaPathMax);
               Object maxCurrentValue = column.getMaxValue();
-              map.put(schemaPathMin, getMinValue(minValue, minCurrentValue));
-              map.put(schemaPathMax, getMaxValue(maxValue, maxCurrentValue));
+              try {
+                map.put(schemaPathMin, getMinValue(minValue, minCurrentValue));
+                map.put(schemaPathMax, getMaxValue(maxValue, maxCurrentValue));
+              } catch (RuntimeException e) {
+                logger.error("Cannot compare statistics for column {}: min: {} vs {}, max {} vs {}", schemaPath, minValue, minCurrentValue, maxValue, maxCurrentValue);
+                logger.error("", e);
+                map.remove(schemaPathMin);
+                map.remove(schemaPathMax);
+                columnTypeMap.remove(schemaPathMin);
+                columnTypeMap.remove(schemaPathMax);
+              }
             }
           }
         }
@@ -851,26 +860,14 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       Binary b1 = this.getBinary(val1);
       Binary b2 = this.getBinary(val2);
       return b1.compareTo(b2);
-    } else if (val1 instanceof Integer) {
-      Integer num1 = (Integer) val1;
-      Integer num2 = (Integer) val2;
-      return num1.compareTo(num2);
-    } else if (val1 instanceof Long) {
-      Long num1 = (Long) val1;
-      Long num2 = (Long) val2;
-      return num1.compareTo(num2);
-    } else if (val1 instanceof Float) {
-      Float num1 = (Float) val1;
-      Float num2 = (Float) val2;
-      return num1.compareTo(num2);
-    } else if (val1 instanceof Double) {
-      Double num1 = (Double) val1;
-      Double num2 = (Double) val2;
-      return num1.compareTo(num2);
-    } else if (val1 instanceof Long) {
-      Long num1 = (Long) val1;
-      Long num2 = (Long) val2;
-      return num1.compareTo(num2);
+    } else if (val1 instanceof Integer || val1 instanceof Long) {
+      Number num1 = (Number) val1;
+      Number num2 = (Number) val2;
+      return Long.compare(num1.intValue(), num2.longValue());
+    } else if (val1 instanceof Float || val1 instanceof Double) {
+      Number num1 = (Number) val1;
+      Number num2 = (Number) val2;
+      return Double.compare(num1.doubleValue(), num2.doubleValue());
     } else {
       throw new UnsupportedOperationException("Unable to create column data for type: " + val1.getClass());
     }
