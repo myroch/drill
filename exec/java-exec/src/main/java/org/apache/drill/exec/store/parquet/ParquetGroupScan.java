@@ -863,7 +863,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     } else if (val1 instanceof Integer || val1 instanceof Long) {
       Number num1 = (Number) val1;
       Number num2 = (Number) val2;
-      return Long.compare(num1.intValue(), num2.longValue());
+      return Long.compare(num1.longValue(), num2.longValue());
     } else if (val1 instanceof Float || val1 instanceof Double) {
       Number num1 = (Number) val1;
       Number num2 = (Number) val2;
