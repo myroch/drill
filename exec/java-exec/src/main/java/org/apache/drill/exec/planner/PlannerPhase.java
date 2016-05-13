@@ -146,7 +146,8 @@ public enum PlannerPhase {
     public RuleSet getRules(OptimizerRulesContext context, Collection<StoragePlugin> plugins) {
       return PlannerPhase.mergedRuleSets(
           RuleSets.ofList(
-              DrillReduceAggregatesRule.INSTANCE_SUM),
+              DrillReduceAggregatesRule.INSTANCE_SUM,
+              DrillReduceAggregatesRule.INSTANCE_WINDOW_SUM),
           getStorageRules(context, plugins, this)
           );
     }

@@ -270,6 +270,9 @@ public interface ExecConstants {
   String CTAS_PARTITIONING_HASH_DISTRIBUTE = "store.partition.hash_distribute";
   BooleanValidator CTAS_PARTITIONING_HASH_DISTRIBUTE_VALIDATOR = new BooleanValidator(CTAS_PARTITIONING_HASH_DISTRIBUTE, false);
 
+  String ENABLE_BULK_LOAD_TABLE_LIST_KEY = "exec.enable_bulk_load_table_list";
+  BooleanValidator ENABLE_BULK_LOAD_TABLE_LIST = new BooleanValidator(ENABLE_BULK_LOAD_TABLE_LIST_KEY, false);
+
   /**
    * Option whose value is a comma separated list of admin usernames. Admin users are users who have special privileges
    * such as changing system options.
@@ -300,4 +303,9 @@ public interface ExecConstants {
   StringValidator IMPERSONATION_POLICY_VALIDATOR =
       new InboundImpersonationManager.InboundImpersonationPolicyValidator(IMPERSONATION_POLICIES_KEY, "[]");
 
+  /**
+   * Web settings
+   */
+  String WEB_LOGS_MAX_LINES = "web.logs.max_lines";
+  OptionValidator WEB_LOGS_MAX_LINES_VALIDATOR = new PositiveLongValidator(WEB_LOGS_MAX_LINES, Integer.MAX_VALUE, 10000);
 }
