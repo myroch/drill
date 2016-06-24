@@ -1035,7 +1035,7 @@ public class Metadata {
 
     @Override
     public boolean hasSingleValue() {
-      return minValue != null && maxValue != null && minValue.equals(maxValue);
+      return minValue != null && maxValue != null && minValue.equals(maxValue) && Long.valueOf(0).equals(this.getNulls());
     }
 
     @Override public Object getMinValue() {
