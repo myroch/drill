@@ -83,7 +83,10 @@ public class SystemOptionManager extends BaseOptionManager implements AutoClosea
       PlannerSettings.HEP_OPT,
       PlannerSettings.PLANNER_MEMORY_LIMIT,
       PlannerSettings.HEP_PARTITION_PRUNING,
+      PlannerSettings.FILTER_MIN_SELECTIVITY_ESTIMATE_FACTOR,
+      PlannerSettings.FILTER_MAX_SELECTIVITY_ESTIMATE_FACTOR,
       PlannerSettings.TYPE_INFERENCE,
+      PlannerSettings.IN_SUBQUERY_THRESHOLD,
       ExecConstants.CAST_TO_NULLABLE_NUMERIC_OPTION,
       ExecConstants.OUTPUT_FORMAT_VALIDATOR,
       ExecConstants.PARQUET_BLOCK_SIZE_VALIDATOR,
@@ -141,7 +144,9 @@ public class SystemOptionManager extends BaseOptionManager implements AutoClosea
       ExecConstants.IMPLICIT_FILENAME_COLUMN_LABEL_VALIDATOR,
       ExecConstants.IMPLICIT_SUFFIX_COLUMN_LABEL_VALIDATOR,
       ExecConstants.IMPLICIT_FQN_COLUMN_LABEL_VALIDATOR,
-      ExecConstants.IMPLICIT_FILEPATH_COLUMN_LABEL_VALIDATOR
+      ExecConstants.IMPLICIT_FILEPATH_COLUMN_LABEL_VALIDATOR,
+      ExecConstants.CODE_GEN_EXP_IN_METHOD_SIZE_VALIDATOR,
+      ExecConstants.CREATE_PREPARE_STATEMENT_TIMEOUT_MILLIS_VALIDATOR
     };
     final Map<String, OptionValidator> tmp = new HashMap<>();
     for (final OptionValidator validator : validators) {
@@ -250,7 +255,7 @@ public class SystemOptionManager extends BaseOptionManager implements AutoClosea
     final String name = value.name.toLowerCase();
     final OptionValidator validator = getValidator(name);
 
-    validator.validate(value); // validate the option
+    validator.validate(value, this); // validate the option
 
     if (options.get(name) == null && value.equals(validator.getDefault())) {
       return; // if the option is not overridden, ignore setting option to default
