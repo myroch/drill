@@ -16,6 +16,7 @@ import org.apache.drill.exec.ops.OptimizerRulesContext;
 import org.apache.drill.exec.physical.base.GroupScan;
 import org.apache.drill.exec.planner.ParquetPartitionDescriptor;
 import org.apache.drill.exec.planner.PartitionDescriptor;
+import org.apache.drill.exec.planner.PartitionLocation;
 import org.apache.drill.exec.planner.logical.DrillFilterRel;
 import org.apache.drill.exec.planner.logical.DrillScanRel;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
@@ -114,8 +115,8 @@ public class ParquetStatisticsRelOptRule extends PruneScanRule {
     }
 
     @Override
-    public TableScan createTableScan(List<String> newFiles) throws Exception {
-      DrillScanRel newScanRel = (DrillScanRel) super.createTableScan(newFiles);
+    public TableScan createTableScan(List<PartitionLocation> newPartitionLocation) throws Exception {
+      DrillScanRel newScanRel = (DrillScanRel) super.createTableScan(newPartitionLocation);
       // using original row type, so newly added min and max columns are removed
       return new ParquetStatisticsDrillScanRel(newScanRel, this.rowType);
     }
