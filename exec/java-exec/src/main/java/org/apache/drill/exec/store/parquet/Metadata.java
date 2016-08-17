@@ -20,14 +20,15 @@ package org.apache.drill.exec.store.parquet;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.exec.store.TimedRunnable;
-import org.apache.drill.exec.store.dfs.DrillFileSystem;
 import org.apache.drill.exec.store.dfs.DrillPathFilter;
 import org.apache.drill.exec.util.ImpersonationUtil;
 import org.apache.hadoop.fs.BlockLocation;
@@ -37,6 +38,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.statistics.Statistics;
+import org.apache.parquet.format.converter.ParquetMetadataConverter;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -88,7 +90,7 @@ public class Metadata {
    */
   public static void createMeta(FileSystem fs, String path) throws IOException {
     Metadata metadata = new Metadata(fs);
-    metadata.createMetaFilesRecursively(path);
+    metadata.createMetaFilesRecursively(new Path(path), null);
   }
 
   /**
@@ -136,43 +138,66 @@ public class Metadata {
     this.fs = ImpersonationUtil.createFileSystem(ImpersonationUtil.getProcessUserName(), fs.getConf());
   }
 
+  private ParquetTableMetadata_v2 createMetaFilesRecursively(final Path currentPath, ParquetTableMetadataBase oldMetadata) throws IOException {
+    final Map<String, ParquetFileMetadata_v2> files = new HashMap<String, ParquetFileMetadata_v2>();
+    MutableInt updated = new MutableInt();
+    MutableInt cached = new MutableInt();
+    final Stopwatch watch = Stopwatch.createStarted();
+    ParquetTableMetadata_v2 result;
+    if (oldMetadata instanceof ParquetTableMetadata_v2) {
+      ParquetTableMetadata_v2 castedMetadata = (ParquetTableMetadata_v2) oldMetadata;
+      for (ParquetFileMetadata_v2 fileMetadata : castedMetadata.files) {
+        files.put(fileMetadata.getPath(), fileMetadata);
+      }
+      result = createMetaFilesRecursively(currentPath, files, castedMetadata.columnTypeInfo, updated, cached);
+    } else {
+      result = createMetaFilesRecursively(currentPath, files, new HashMap<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2>(), updated, cached);
+    }
+    logger.info("Took {} ms to refresh metadata. File counts: updated={}, old={}", watch.elapsed(TimeUnit.MILLISECONDS), updated.intValue(), cached.intValue());
+    return result;
+  }
+
   /**
    * Create the parquet metadata file for the directory at the given path, and for any subdirectories
    *
    * @param path
    * @throws IOException
    */
-  private ParquetTableMetadata_v2 createMetaFilesRecursively(final String path) throws IOException {
+  private ParquetTableMetadata_v2 createMetaFilesRecursively(final Path currentPath, final Map<String, ParquetFileMetadata_v2> files, final Map<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2> columns, final MutableInt updated, final MutableInt cached) throws IOException {
     List<ParquetFileMetadata_v2> metaDataList = Lists.newArrayList();
     List<String> directoryList = Lists.newArrayList();
-    ConcurrentHashMap<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2> columnTypeInfoSet =
-        new ConcurrentHashMap<>();
-    Path p = new Path(path);
-    FileStatus fileStatus = fs.getFileStatus(p);
+    ConcurrentHashMap<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2> columnTypeInfoSet = new ConcurrentHashMap<>();
+    FileStatus fileStatus = fs.getFileStatus(currentPath);
     assert fileStatus.isDirectory() : "Expected directory";
 
     final List<FileStatus> childFiles = Lists.newArrayList();
 
-    for (final FileStatus file : fs.listStatus(p, new DrillPathFilter())) {
+    for (final FileStatus file : fs.listStatus(currentPath, new DrillPathFilter())) {
+      Path filePath = file.getPath();
       if (file.isDirectory()) {
-        ParquetTableMetadata_v2 subTableMetadata = createMetaFilesRecursively(file.getPath().toString());
+        ParquetTableMetadata_v2 subTableMetadata = createMetaFilesRecursively(filePath, files, columns, updated, cached);
         metaDataList.addAll(subTableMetadata.files);
         directoryList.addAll(subTableMetadata.directories);
-        directoryList.add(file.getPath().toString());
+        directoryList.add(filePath.toString()); // add directory into the list (with scheme and authority)
         // Merge the schema from the child level into the current level
-        //TODO: We need a merge method that merges two colums with the same name but different types
         columnTypeInfoSet.putAll(subTableMetadata.columnTypeInfo);
       } else {
-        childFiles.add(file);
+        String filePathWithoutSchemeAndAuthorityStr = Path.getPathWithoutSchemeAndAuthority(file.getPath()).toString();
+        ParquetFileMetadata_v2 oldFileMeta = files.get(filePathWithoutSchemeAndAuthorityStr);
+        if (oldFileMeta == null || oldFileMeta.modificationTime == null || oldFileMeta.modificationTime.longValue() < file.getModificationTime()) {
+          childFiles.add(file); // new or updated file
+          updated.increment();
+        } else { // same file as last time
+          columnTypeInfoSet.putAll(columns); // keep old schema
+          metaDataList.add(oldFileMeta); // add it's meta
+          cached.increment();
+        }
       }
     }
     ParquetTableMetadata_v2 parquetTableMetadata = new ParquetTableMetadata_v2();
     if (childFiles.size() > 0) {
-      List<ParquetFileMetadata_v2> childFilesMetadata =
-          getParquetFileMetadata_v2(parquetTableMetadata, childFiles);
+      List<ParquetFileMetadata_v2> childFilesMetadata = getParquetFileMetadata_v2(parquetTableMetadata, childFiles);
       metaDataList.addAll(childFilesMetadata);
-      // Note that we do not need to merge the columnInfo at this point. The columnInfo is already added
-      // to the parquetTableMetadata.
     }
 
     parquetTableMetadata.directories = directoryList;
@@ -184,9 +209,9 @@ public class Metadata {
     parquetTableMetadata.columnTypeInfo.putAll(columnTypeInfoSet);
 
     for (String oldname : OLD_METADATA_FILENAMES) {
-      fs.delete(new Path(p, oldname), false);
+      fs.delete(new Path(currentPath, oldname), false);
     }
-    writeFile(parquetTableMetadata, new Path(p, METADATA_FILENAME));
+    writeFile(parquetTableMetadata, new Path(currentPath, METADATA_FILENAME));
     return parquetTableMetadata;
   }
 
@@ -309,7 +334,7 @@ public class Metadata {
    */
   private ParquetFileMetadata_v2 getParquetFileMetadata_v2(ParquetTableMetadata_v2 parquetTableMetadata,
       FileStatus file) throws IOException {
-    ParquetMetadata metadata = ParquetFileReader.readFooter(fs.getConf(), file);
+    ParquetMetadata metadata = ParquetFileReader.readFooter(fs.getConf(), file, ParquetMetadataConverter.NO_FILTER);
     MessageType schema = metadata.getFileMetaData().getSchema();
 
     Map<SchemaPath, OriginalType> originalTypeMap = Maps.newHashMap();
@@ -359,7 +384,7 @@ public class Metadata {
     }
     String path = Path.getPathWithoutSchemeAndAuthority(file.getPath()).toString();
 
-    return new ParquetFileMetadata_v2(path, file.getLen(), rowGroupMetadataList);
+    return new ParquetFileMetadata_v2(path, file.getLen(), rowGroupMetadataList, file.getModificationTime());
   }
 
   /**
@@ -442,8 +467,7 @@ public class Metadata {
     logger.info("Took {} ms to read metadata from cache file", timer.elapsed(TimeUnit.MILLISECONDS));
     timer.stop();
     if (tableModified(parquetTableMetadata, p)) {
-      parquetTableMetadata =
-          createMetaFilesRecursively(Path.getPathWithoutSchemeAndAuthority(p.getParent()).toString());
+      parquetTableMetadata = createMetaFilesRecursively(Path.getPathWithoutSchemeAndAuthority(p.getParent()), parquetTableMetadata);
     }
     return parquetTableMetadata;
   }
@@ -558,6 +582,7 @@ public class Metadata {
       return files;
     }
 
+    @SuppressWarnings("unchecked")
     @JsonIgnore @Override public void assignFiles(List<? extends ParquetFileMetadata> newFiles) {
       this.files = (List<ParquetFileMetadata_v1>) newFiles;
     }
@@ -814,6 +839,7 @@ public class Metadata {
       return files;
     }
 
+    @SuppressWarnings("unchecked")
     @JsonIgnore @Override public void assignFiles(List<? extends ParquetFileMetadata> newFiles) {
       this.files = (List<ParquetFileMetadata_v2>) newFiles;
     }
@@ -843,15 +869,17 @@ public class Metadata {
     @JsonProperty public String path;
     @JsonProperty public Long length;
     @JsonProperty public List<RowGroupMetadata_v2> rowGroups;
+    @JsonProperty public Long modificationTime;
 
     public ParquetFileMetadata_v2() {
       super();
     }
 
-    public ParquetFileMetadata_v2(String path, Long length, List<RowGroupMetadata_v2> rowGroups) {
+    public ParquetFileMetadata_v2(String path, Long length, List<RowGroupMetadata_v2> rowGroups, Long modificationTime) {
       this.path = path;
       this.length = length;
       this.rowGroups = rowGroups;
+      this.modificationTime = modificationTime;
     }
 
     @Override public String toString() {
@@ -868,6 +896,10 @@ public class Metadata {
 
     @JsonIgnore @Override public List<? extends RowGroupMetadata> getRowGroups() {
       return rowGroups;
+    }
+
+    @JsonIgnore public Long getTimestamp() {
+      return length;
     }
   }
 
