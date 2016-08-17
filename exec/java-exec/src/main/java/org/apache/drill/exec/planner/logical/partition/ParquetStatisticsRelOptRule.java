@@ -115,8 +115,9 @@ public class ParquetStatisticsRelOptRule extends PruneScanRule {
     }
 
     @Override
-    public TableScan createTableScan(List<PartitionLocation> newPartitionLocation) throws Exception {
-      DrillScanRel newScanRel = (DrillScanRel) super.createTableScan(newPartitionLocation);
+    public TableScan createTableScan(List<PartitionLocation> newPartitionLocation, String cacheFileRoot,
+        boolean wasAllPartitionsPruned) throws Exception {
+      DrillScanRel newScanRel = (DrillScanRel) super.createTableScan(newPartitionLocation, cacheFileRoot, wasAllPartitionsPruned);
       // using original row type, so newly added min and max columns are removed
       return new ParquetStatisticsDrillScanRel(newScanRel, this.rowType);
     }

@@ -166,7 +166,7 @@ public class BaseTestQuery extends ExecTest {
   }
 
   protected static String getDfsTestTmpSchemaLocation() {
-    return dfsTestTmpSchemaLocation;
+    return dfsTestTmpSchemaLocation.replace('\\', '/');
   }
 
   private static void resetClientAndBit() throws Exception{
