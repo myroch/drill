@@ -103,7 +103,7 @@ public class Metadata {
    * @return
    * @throws IOException
    */
-  public static ParquetTableMetadata_v2 getParquetTableMetadata(FileSystem fs, String path)
+  public static ParquetTableMetadata_v3 getParquetTableMetadata(FileSystem fs, String path)
       throws IOException {
     Metadata metadata = new Metadata(fs);
     return metadata.getParquetTableMetadata(path);
@@ -117,7 +117,7 @@ public class Metadata {
    * @return
    * @throws IOException
    */
-  public static ParquetTableMetadata_v2 getParquetTableMetadata(FileSystem fs,
+  public static ParquetTableMetadata_v3 getParquetTableMetadata(FileSystem fs,
       List<FileStatus> fileStatuses) throws IOException {
     Metadata metadata = new Metadata(fs);
     return metadata.getParquetTableMetadata(fileStatuses);
@@ -140,24 +140,24 @@ public class Metadata {
     this.fs = ImpersonationUtil.createFileSystem(ImpersonationUtil.getProcessUserName(), fs.getConf());
   }
 
-  private ParquetTableMetadata_v2 createMetaFilesRecursively(final Path currentPath, ParquetTableMetadataBase oldMetadata) throws IOException {
-    final Map<String, ParquetFileMetadata_v2> files = new HashMap<String, ParquetFileMetadata_v2>();
-    final Map<String, ParquetDirectoryMetadata_v2> directories = new HashMap<String, ParquetDirectoryMetadata_v2>();
+  private ParquetTableMetadata_v3 createMetaFilesRecursively(final Path currentPath, ParquetTableMetadataBase oldMetadata) throws IOException {
+    final Map<String, ParquetFileMetadata_v3> files = new HashMap<String, ParquetFileMetadata_v3>();
+    final Map<String, ParquetDirectoryMetadata_v3> directories = new HashMap<String, ParquetDirectoryMetadata_v3>();
     MutableInt updated = new MutableInt();
     MutableInt cached = new MutableInt();
     final Stopwatch watch = Stopwatch.createStarted();
-    ParquetTableMetadata_v2 result;
-    if (oldMetadata instanceof ParquetTableMetadata_v2) {
-      ParquetTableMetadata_v2 castedMetadata = (ParquetTableMetadata_v2) oldMetadata;
-      for (ParquetFileMetadata_v2 fileMetadata : castedMetadata.files) {
+    ParquetTableMetadata_v3 result;
+    if (oldMetadata instanceof ParquetTableMetadata_v3) {
+      ParquetTableMetadata_v3 castedMetadata = (ParquetTableMetadata_v3) oldMetadata;
+      for (ParquetFileMetadata_v3 fileMetadata : castedMetadata.files) {
         files.put(fileMetadata.getPath(), fileMetadata);
       }
-      for (ParquetDirectoryMetadata_v2 directoryMetadata : castedMetadata.directories) {
+      for (ParquetDirectoryMetadata_v3 directoryMetadata : castedMetadata.directories) {
         directories.put(directoryMetadata.getPath(), directoryMetadata);
       }
       result = createMetaFilesRecursively(currentPath, files, directories, castedMetadata.columnTypeInfo, updated, cached);
     } else {
-      result = createMetaFilesRecursively(currentPath, files, directories, new HashMap<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2>(), updated, cached);
+      result = createMetaFilesRecursively(currentPath, files, directories, new HashMap<ColumnTypeMetadata_v3.Key, ColumnTypeMetadata_v3>(), updated, cached);
     }
     logger.info("Took {} ms to refresh metadata. File counts: updated={}, old={}", watch.elapsed(TimeUnit.MILLISECONDS), updated.intValue(), cached.intValue());
     return result;
@@ -169,15 +169,15 @@ public class Metadata {
    * @param path
    * @throws IOException
    */
-  private ParquetTableMetadata_v2 createMetaFilesRecursively(final Path currentPath,
-      final Map<String, ParquetFileMetadata_v2> files,
-      final Map<String, ParquetDirectoryMetadata_v2> directories,
-      final Map<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2> columns,
+  private ParquetTableMetadata_v3 createMetaFilesRecursively(final Path currentPath,
+      final Map<String, ParquetFileMetadata_v3> files,
+      final Map<String, ParquetDirectoryMetadata_v3> directories,
+      final Map<ColumnTypeMetadata_v3.Key, ColumnTypeMetadata_v3> columns,
       final MutableInt updated,
       final MutableInt cached) throws IOException {
-    List<ParquetFileMetadata_v2> metaDataList = Lists.newArrayList();
-    List<ParquetDirectoryMetadata_v2> directoryList = Lists.newArrayList();
-    ConcurrentHashMap<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2> columnTypeInfoSet = new ConcurrentHashMap<>();
+    List<ParquetFileMetadata_v3> metaDataList = Lists.newArrayList();
+    List<ParquetDirectoryMetadata_v3> directoryList = Lists.newArrayList();
+    ConcurrentHashMap<ColumnTypeMetadata_v3.Key, ColumnTypeMetadata_v3> columnTypeInfoSet = new ConcurrentHashMap<>();
     FileStatus fileStatus = fs.getFileStatus(currentPath);
     assert fileStatus.isDirectory() : "Expected directory";
 
@@ -187,26 +187,26 @@ public class Metadata {
       Path filePath = file.getPath();
       if (file.isDirectory()) {
         String directoryPathStr = filePath.toString();
-        ParquetDirectoryMetadata_v2 oldDirectoryMeta = directories.get(directoryPathStr);
+        ParquetDirectoryMetadata_v3 oldDirectoryMeta = directories.get(directoryPathStr);
         if (oldDirectoryMeta==null || oldDirectoryMeta.modificationTime == null || oldDirectoryMeta.modificationTime.longValue() < file.getModificationTime()) {
           // updated or new directory
-          ParquetTableMetadata_v2 subTableMetadata = createMetaFilesRecursively(filePath, files, directories, columns, updated, cached);
+          ParquetTableMetadata_v3 subTableMetadata = createMetaFilesRecursively(filePath, files, directories, columns, updated, cached);
           metaDataList.addAll(subTableMetadata.files);
           directoryList.addAll(subTableMetadata.directories);
        // add directory into the list (with scheme and authority) with new modification time (as meta file was just created there)
-          directoryList.add(new ParquetDirectoryMetadata_v2(directoryPathStr, fs.getFileStatus(filePath).getModificationTime()));
+          directoryList.add(new ParquetDirectoryMetadata_v3(directoryPathStr, fs.getFileStatus(filePath).getModificationTime()));
           // Merge the schema from the child level into the current level
           columnTypeInfoSet.putAll(subTableMetadata.columnTypeInfo);
         } else {
           // not updated directory, keep it as it is, just add all of its files/directories into current (parent) meta
           String directoryPathWithoutSchemeAndAuthorityStr = Path.getPathWithoutSchemeAndAuthority(filePath).toString();
-          for (ParquetFileMetadata_v2 oldFileMeta : files.values()) {
+          for (ParquetFileMetadata_v3 oldFileMeta : files.values()) {
             if (oldFileMeta.path.startsWith(directoryPathWithoutSchemeAndAuthorityStr)) {
               metaDataList.add(oldFileMeta);
               cached.increment();
             }
           }
-          for (ParquetDirectoryMetadata_v2 oldDirMeta : directories.values()) {
+          for (ParquetDirectoryMetadata_v3 oldDirMeta : directories.values()) {
             if (oldDirMeta.path.startsWith(directoryPathStr)) { // directories are with schema and authority
               directoryList.add(oldDirMeta);
             }
@@ -215,7 +215,7 @@ public class Metadata {
         }
       } else {
         String filePathWithoutSchemeAndAuthorityStr = Path.getPathWithoutSchemeAndAuthority(filePath).toString();
-        ParquetFileMetadata_v2 oldFileMeta = files.get(filePathWithoutSchemeAndAuthorityStr);
+        ParquetFileMetadata_v3 oldFileMeta = files.get(filePathWithoutSchemeAndAuthorityStr);
         if (oldFileMeta == null || oldFileMeta.modificationTime == null || oldFileMeta.modificationTime.longValue() < file.getModificationTime()) {
           childFiles.add(file); // new or updated file
           updated.increment();
@@ -226,9 +226,9 @@ public class Metadata {
         }
       }
     }
-    ParquetTableMetadata_v2 parquetTableMetadata = new ParquetTableMetadata_v2();
+    ParquetTableMetadata_v3 parquetTableMetadata = new ParquetTableMetadata_v3();
     if (childFiles.size() > 0) {
-      List<ParquetFileMetadata_v2> childFilesMetadata = getParquetFileMetadata_v2(parquetTableMetadata, childFiles);
+      List<ParquetFileMetadata_v3> childFilesMetadata = getParquetFileMetadata_v3(parquetTableMetadata, childFiles);
       metaDataList.addAll(childFilesMetadata);
     }
 
@@ -254,7 +254,7 @@ public class Metadata {
    * @return
    * @throws IOException
    */
-  private ParquetTableMetadata_v2 getParquetTableMetadata(String path) throws IOException {
+  private ParquetTableMetadata_v3 getParquetTableMetadata(String path) throws IOException {
     Path p = new Path(path);
     FileStatus fileStatus = fs.getFileStatus(p);
     final Stopwatch watch = Stopwatch.createStarted();
@@ -262,7 +262,7 @@ public class Metadata {
     logger.info("Took {} ms to get file statuses", watch.elapsed(TimeUnit.MILLISECONDS));
     watch.reset();
     watch.start();
-    ParquetTableMetadata_v2 metadata = getParquetTableMetadata(fileStatuses);
+    ParquetTableMetadata_v3 metadata = getParquetTableMetadata(fileStatuses);
     logger.info("Took {} ms to read file metadata", watch.elapsed(TimeUnit.MILLISECONDS));
     return metadata;
   }
@@ -274,12 +274,12 @@ public class Metadata {
    * @return
    * @throws IOException
    */
-  private ParquetTableMetadata_v2 getParquetTableMetadata(List<FileStatus> fileStatuses)
+  private ParquetTableMetadata_v3 getParquetTableMetadata(List<FileStatus> fileStatuses)
       throws IOException {
-    ParquetTableMetadata_v2 tableMetadata = new ParquetTableMetadata_v2();
-    List<ParquetFileMetadata_v2> fileMetadataList = getParquetFileMetadata_v2(tableMetadata, fileStatuses);
+    ParquetTableMetadata_v3 tableMetadata = new ParquetTableMetadata_v3();
+    List<ParquetFileMetadata_v3> fileMetadataList = getParquetFileMetadata_v3(tableMetadata, fileStatuses);
     tableMetadata.files = fileMetadataList;
-    tableMetadata.directories = new ArrayList<ParquetDirectoryMetadata_v2>();
+    tableMetadata.directories = new ArrayList<ParquetDirectoryMetadata_v3>();
     return tableMetadata;
   }
 
@@ -290,14 +290,14 @@ public class Metadata {
    * @return
    * @throws IOException
    */
-  private List<ParquetFileMetadata_v2> getParquetFileMetadata_v2(
-      ParquetTableMetadata_v2 parquetTableMetadata_v1, List<FileStatus> fileStatuses) throws IOException {
-    List<TimedRunnable<ParquetFileMetadata_v2>> gatherers = Lists.newArrayList();
+  private List<ParquetFileMetadata_v3> getParquetFileMetadata_v3(
+      ParquetTableMetadata_v3 parquetTableMetadata_v1, List<FileStatus> fileStatuses) throws IOException {
+    List<TimedRunnable<ParquetFileMetadata_v3>> gatherers = Lists.newArrayList();
     for (FileStatus file : fileStatuses) {
       gatherers.add(new MetadataGatherer(parquetTableMetadata_v1, file));
     }
 
-    List<ParquetFileMetadata_v2> metaDataList = Lists.newArrayList();
+    List<ParquetFileMetadata_v3> metaDataList = Lists.newArrayList();
     metaDataList.addAll(TimedRunnable.run("Fetch parquet metadata", logger, gatherers, 16));
     return metaDataList;
   }
@@ -324,19 +324,19 @@ public class Metadata {
   /**
    * TimedRunnable that reads the footer from parquet and collects file metadata
    */
-  private class MetadataGatherer extends TimedRunnable<ParquetFileMetadata_v2> {
+  private class MetadataGatherer extends TimedRunnable<ParquetFileMetadata_v3> {
 
     private FileStatus fileStatus;
-    private ParquetTableMetadata_v2 parquetTableMetadata;
+    private ParquetTableMetadata_v3 parquetTableMetadata;
 
-    public MetadataGatherer(ParquetTableMetadata_v2 parquetTableMetadata, FileStatus fileStatus) {
+    public MetadataGatherer(ParquetTableMetadata_v3 parquetTableMetadata, FileStatus fileStatus) {
       this.fileStatus = fileStatus;
       this.parquetTableMetadata = parquetTableMetadata;
     }
 
     @Override
-    protected ParquetFileMetadata_v2 runInner() throws Exception {
-      return getParquetFileMetadata_v2(parquetTableMetadata, fileStatus);
+    protected ParquetFileMetadata_v3 runInner() throws Exception {
+      return getParquetFileMetadata_v3(parquetTableMetadata, fileStatus);
     }
 
     @Override
@@ -364,7 +364,7 @@ public class Metadata {
    * @return
    * @throws IOException
    */
-  private ParquetFileMetadata_v2 getParquetFileMetadata_v2(ParquetTableMetadata_v2 parquetTableMetadata,
+  private ParquetFileMetadata_v3 getParquetFileMetadata_v3(ParquetTableMetadata_v3 parquetTableMetadata,
       FileStatus file) throws IOException {
     ParquetMetadata metadata = ParquetFileReader.readFooter(fs.getConf(), file, ParquetMetadataConverter.NO_FILTER);
     MessageType schema = metadata.getFileMetaData().getSchema();
@@ -375,48 +375,48 @@ public class Metadata {
       originalTypeMap.put(SchemaPath.getCompoundPath(path), getOriginalType(schema, path, 0));
     }
 
-    List<RowGroupMetadata_v2> rowGroupMetadataList = Lists.newArrayList();
+    List<RowGroupMetadata_v3> rowGroupMetadataList = Lists.newArrayList();
 
     for (BlockMetaData rowGroup : metadata.getBlocks()) {
-      List<ColumnMetadata_v2> columnMetadataList = Lists.newArrayList();
+      List<ColumnMetadata_v3> columnMetadataList = Lists.newArrayList();
       long length = 0;
       for (ColumnChunkMetaData col : rowGroup.getColumns()) {
-        ColumnMetadata_v2 columnMetadata;
+        ColumnMetadata_v3 columnMetadata;
 
         boolean statsAvailable = (col.getStatistics() != null && !col.getStatistics().isEmpty());
 
         Statistics<?> stats = col.getStatistics();
         String[] columnName = col.getPath().toArray();
         SchemaPath columnSchemaName = SchemaPath.getCompoundPath(columnName);
-        ColumnTypeMetadata_v2 columnTypeMetadata =
-            new ColumnTypeMetadata_v2(columnName, col.getType(), originalTypeMap.get(columnSchemaName));
+        ColumnTypeMetadata_v3 columnTypeMetadata =
+            new ColumnTypeMetadata_v3(columnName, col.getType(), originalTypeMap.get(columnSchemaName));
         if (parquetTableMetadata.columnTypeInfo == null) {
           parquetTableMetadata.columnTypeInfo = new ConcurrentHashMap<>();
         }
         // Save the column schema info. We'll merge it into one list
-        parquetTableMetadata.columnTypeInfo.put(new ColumnTypeMetadata_v2.Key(columnTypeMetadata.name),
+        parquetTableMetadata.columnTypeInfo.put(new ColumnTypeMetadata_v3.Key(columnTypeMetadata.name),
             columnTypeMetadata);
         if (statsAvailable) {
           Object minValue = stats.genericGetMin();
           Object maxValue = stats.genericGetMax();
-          columnMetadata = new ColumnMetadata_v2(columnTypeMetadata.name, col.getType(), minValue, maxValue,
+          columnMetadata = new ColumnMetadata_v3(columnTypeMetadata.name, col.getType(), minValue, maxValue,
               stats.getNumNulls());
         } else {
-          columnMetadata = new ColumnMetadata_v2(columnTypeMetadata.name, col.getType(), null, null, null);
+          columnMetadata = new ColumnMetadata_v3(columnTypeMetadata.name, col.getType(), null, null, null);
         }
         columnMetadataList.add(columnMetadata);
         length += col.getTotalSize();
       }
 
-      RowGroupMetadata_v2 rowGroupMeta =
-          new RowGroupMetadata_v2(rowGroup.getStartingPos(), length, rowGroup.getRowCount(),
+      RowGroupMetadata_v3 rowGroupMeta =
+          new RowGroupMetadata_v3(rowGroup.getStartingPos(), length, rowGroup.getRowCount(),
               getHostAffinity(file, rowGroup.getStartingPos(), length), columnMetadataList);
 
       rowGroupMetadataList.add(rowGroupMeta);
     }
     String path = Path.getPathWithoutSchemeAndAuthority(file.getPath()).toString();
 
-    return new ParquetFileMetadata_v2(path, file.getLen(), rowGroupMetadataList, file.getModificationTime());
+    return new ParquetFileMetadata_v3(path, file.getLen(), rowGroupMetadataList, file.getModificationTime());
   }
 
   /**
@@ -457,13 +457,13 @@ public class Metadata {
    * @param p
    * @throws IOException
    */
-  private void writeFile(ParquetTableMetadata_v2 parquetTableMetadata, Path p) throws IOException {
+  private void writeFile(ParquetTableMetadata_v3 parquetTableMetadata, Path p) throws IOException {
     JsonFactory jsonFactory = new JsonFactory();
     jsonFactory.configure(Feature.AUTO_CLOSE_TARGET, false);
     jsonFactory.configure(JsonParser.Feature.AUTO_CLOSE_SOURCE, false);
     ObjectMapper mapper = new ObjectMapper(jsonFactory);
     SimpleModule module = new SimpleModule();
-    module.addSerializer(ColumnMetadata_v2.class, new ColumnMetadata_v2.Serializer());
+    module.addSerializer(ColumnMetadata_v3.class, new ColumnMetadata_v3.Serializer());
     mapper.registerModule(module);
     FSDataOutputStream os = fs.create(p);
     mapper.writerWithDefaultPrettyPrinter().writeValue(os, parquetTableMetadata);
@@ -485,7 +485,7 @@ public class Metadata {
 
     final SimpleModule serialModule = new SimpleModule();
     serialModule.addDeserializer(SchemaPath.class, new SchemaPath.De());
-    serialModule.addKeyDeserializer(ColumnTypeMetadata_v2.Key.class, new ColumnTypeMetadata_v2.Key.DeSerializer());
+    serialModule.addKeyDeserializer(ColumnTypeMetadata_v3.Key.class, new ColumnTypeMetadata_v3.Key.DeSerializer());
 
     AfterburnerModule module = new AfterburnerModule();
     module.setUseOptimizedBeanDeserializer(true);
@@ -515,7 +515,7 @@ public class Metadata {
    */
   private boolean tableModified(ParquetTableMetadataBase tableMetadata, Path metaFilePath)
       throws IOException {
-    if (!(tableMetadata instanceof ParquetTableMetadata_v2)) {
+    if (!(tableMetadata instanceof ParquetTableMetadata_v3)) {
       return true; // update old meta
     }
     long metaFileModifyTime = fs.getFileStatus(metaFilePath).getModificationTime();
@@ -524,8 +524,8 @@ public class Metadata {
       return true;
     }
     // performance: not checking all directories, just root - requires calling refresh meta after each change in subdirectory!
-//    ParquetTableMetadata_v2 metadata = (ParquetTableMetadata_v2) tableMetadata;
-//    for (ParquetDirectoryMetadata_v2 directory : metadata.getDirectories()) {
+//    ParquetTableMetadata_v3 metadata = (ParquetTableMetadata_v3) tableMetadata;
+//    for (ParquetDirectoryMetadata_v3 directory : metadata.getDirectories()) {
 //      directoryStatus = fs.getFileStatus(new Path(directory.getPath()));
 //      if (directory.getTimestamp() == null || directoryStatus.getModificationTime() > directory.getTimestamp().longValue()) {
 //        return true;
@@ -537,7 +537,8 @@ public class Metadata {
   @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "metadata_version")
   @JsonSubTypes({
       @JsonSubTypes.Type(value = ParquetTableMetadata_v1.class, name="v1"),
-      @JsonSubTypes.Type(value = ParquetTableMetadata_v2.class, name="v2")
+      @JsonSubTypes.Type(value = ParquetTableMetadata_v2.class, name="v2"),
+      @JsonSubTypes.Type(value = ParquetTableMetadata_v3.class, name="v3")
       })
   public static abstract class ParquetTableMetadataBase {
 
@@ -587,9 +588,9 @@ public class Metadata {
 
     public abstract boolean hasSingleValue();
 
-    public abstract Object getMaxValue();
-
     public abstract Object getMinValue();
+
+    public abstract Object getMaxValue();
 
     public abstract PrimitiveTypeName getPrimitiveType();
 
@@ -825,13 +826,14 @@ public class Metadata {
       return (max != null && min != null && max.equals(min));
     }
 
+    @Override public Object getMinValue() {
+      return min;
+    }
+
     @Override public Object getMaxValue() {
       return max;
     }
 
-    @Override public Object getMinValue() {
-      return min;
-    }
   }
 
   /**
@@ -845,20 +847,20 @@ public class Metadata {
      */
     @JsonProperty public ConcurrentHashMap<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2> columnTypeInfo;
     @JsonProperty List<ParquetFileMetadata_v2> files;
-    @JsonProperty List<ParquetDirectoryMetadata_v2> directories;
+    @JsonProperty List<String> directories;
 
     public ParquetTableMetadata_v2() {
       super();
     }
 
     public ParquetTableMetadata_v2(ParquetTableMetadataBase parquetTable,
-        List<ParquetFileMetadata_v2> files, List<ParquetDirectoryMetadata_v2> directories) {
+        List<ParquetFileMetadata_v2> files, List<String> directories) {
       this.files = files;
       this.directories = directories;
       this.columnTypeInfo = ((ParquetTableMetadata_v2) parquetTable).columnTypeInfo;
     }
 
-    public ParquetTableMetadata_v2(List<ParquetFileMetadata_v2> files, List<ParquetDirectoryMetadata_v2> directories,
+    public ParquetTableMetadata_v2(List<ParquetFileMetadata_v2> files, List<String> directories,
         ConcurrentHashMap<ColumnTypeMetadata_v2.Key, ColumnTypeMetadata_v2> columnTypeInfo) {
       this.files = files;
       this.directories = directories;
@@ -869,7 +871,7 @@ public class Metadata {
       return columnTypeInfo.get(new ColumnTypeMetadata_v2.Key(name));
     }
 
-    @JsonIgnore public List<ParquetDirectoryMetadata_v2> getDirectories() {
+    @JsonIgnore public List<String> getDirectories() {
       return directories;
     }
 
@@ -907,17 +909,15 @@ public class Metadata {
     @JsonProperty public String path;
     @JsonProperty public Long length;
     @JsonProperty public List<RowGroupMetadata_v2> rowGroups;
-    @JsonProperty public Long modificationTime;
 
     public ParquetFileMetadata_v2() {
       super();
     }
 
-    public ParquetFileMetadata_v2(String path, Long length, List<RowGroupMetadata_v2> rowGroups, Long modificationTime) {
+    public ParquetFileMetadata_v2(String path, Long length, List<RowGroupMetadata_v2> rowGroups) {
       this.path = path;
       this.length = length;
       this.rowGroups = rowGroups;
-      this.modificationTime = modificationTime;
     }
 
     @Override public String toString() {
@@ -935,40 +935,8 @@ public class Metadata {
     @JsonIgnore @Override public List<? extends RowGroupMetadata> getRowGroups() {
       return rowGroups;
     }
-
-    @JsonIgnore public Long getTimestamp() {
-      return modificationTime;
-    }
   }
 
-  /**
-   * Struct which contains the metadata for a single parquet file
-   */
-  public static class ParquetDirectoryMetadata_v2 extends ParquetDirectoryMetadata {
-    @JsonProperty public String path;
-    @JsonProperty public Long modificationTime;
-
-    public ParquetDirectoryMetadata_v2() {
-      super();
-    }
-
-    public ParquetDirectoryMetadata_v2(String path, Long modificationTime) {
-      this.path = path;
-      this.modificationTime = modificationTime;
-    }
-
-    @Override public String toString() {
-      return String.format("path: %s", path);
-    }
-
-    @JsonIgnore @Override public String getPath() {
-      return path;
-    }
-
-    @JsonIgnore public Long getTimestamp() {
-      return modificationTime;
-    }
-  }
 
   /**
    * A struct that contains the metadata for a parquet row group
@@ -1076,6 +1044,344 @@ public class Metadata {
         }
         return s;
       }
+    }
+  }
+
+
+  /**
+   * A struct that contains the metadata for a column in a parquet file
+   */
+  public static class ColumnMetadata_v2 extends ColumnMetadata {
+    // Use a string array for name instead of Schema Path to make serialization easier
+    @JsonProperty public String[] name;
+    @JsonProperty public Long nulls;
+
+    public Object mxValue;
+
+    @JsonIgnore private PrimitiveTypeName primitiveType;
+
+    public ColumnMetadata_v2() {
+      super();
+    }
+
+    public ColumnMetadata_v2(String[] name, PrimitiveTypeName primitiveType, Object mxValue, Long nulls) {
+      this.name = name;
+      this.mxValue = mxValue;
+      this.nulls = nulls;
+      this.primitiveType = primitiveType;
+    }
+
+    @JsonProperty(value = "mxValue") public void setMax(Object mxValue) {
+      this.mxValue = mxValue;
+    }
+
+    @Override public String[] getName() {
+      return name;
+    }
+
+    @Override public Long getNulls() {
+      return nulls;
+    }
+
+    @Override
+    public boolean hasSingleValue() {
+      return (mxValue != null);
+    }
+
+    @Override public Object getMinValue() {
+      return mxValue;
+    }
+
+    @Override public Object getMaxValue() {
+      return mxValue;
+    }
+
+    @Override public PrimitiveTypeName getPrimitiveType() {
+      return null;
+    }
+
+    @Override public OriginalType getOriginalType() {
+      return null;
+    }
+
+    public static class DeSerializer extends JsonDeserializer<ColumnMetadata_v2> {
+      @Override public ColumnMetadata_v2 deserialize(JsonParser jp, DeserializationContext ctxt)
+          throws IOException, JsonProcessingException {
+        return null;
+      }
+    }
+
+
+    // We use a custom serializer and write only non null values.
+    public static class Serializer extends JsonSerializer<ColumnMetadata_v2> {
+      @Override
+      public void serialize(ColumnMetadata_v2 value, JsonGenerator jgen, SerializerProvider provider)
+          throws IOException, JsonProcessingException {
+        jgen.writeStartObject();
+        jgen.writeArrayFieldStart("name");
+        for (String n : value.name) {
+          jgen.writeString(n);
+        }
+        jgen.writeEndArray();
+        if (value.mxValue != null) {
+          Object val;
+          if (value.primitiveType == PrimitiveTypeName.BINARY && value.mxValue != null) {
+            val = new String(((Binary) value.mxValue).getBytes());
+          } else {
+            val = value.mxValue;
+          }
+          jgen.writeObjectField("mxValue", val);
+        }
+        if (value.nulls != null) {
+          jgen.writeObjectField("nulls", value.nulls);
+        }
+        jgen.writeEndObject();
+      }
+    }
+  }
+
+  /**
+   * Struct which contains the metadata for an entire parquet directory structure
+   */
+  @JsonTypeName("v3") public static class ParquetTableMetadata_v3 extends ParquetTableMetadataBase {
+    /*
+     ColumnTypeInfo is schema information from all the files and row groups, merged into
+     one. To get this info, we pass the ParquetTableMetadata object all the way dow to the
+     RowGroup and the column type is built there as it is read from the footer.
+     */
+    @JsonProperty public ConcurrentHashMap<ColumnTypeMetadata_v3.Key, ColumnTypeMetadata_v3> columnTypeInfo;
+    @JsonProperty List<ParquetFileMetadata_v3> files;
+    @JsonProperty List<ParquetDirectoryMetadata_v3> directories;
+
+    public ParquetTableMetadata_v3() {
+      super();
+    }
+
+    public ParquetTableMetadata_v3(ParquetTableMetadataBase parquetTable,
+        List<ParquetFileMetadata_v3> files, List<ParquetDirectoryMetadata_v3> directories) {
+      this.files = files;
+      this.directories = directories;
+      this.columnTypeInfo = ((ParquetTableMetadata_v3) parquetTable).columnTypeInfo;
+    }
+
+    public ParquetTableMetadata_v3(List<ParquetFileMetadata_v3> files, List<ParquetDirectoryMetadata_v3> directories,
+        ConcurrentHashMap<ColumnTypeMetadata_v3.Key, ColumnTypeMetadata_v3> columnTypeInfo) {
+      this.files = files;
+      this.directories = directories;
+      this.columnTypeInfo = columnTypeInfo;
+    }
+
+    public ColumnTypeMetadata_v3 getColumnTypeInfo(String[] name) {
+      return columnTypeInfo.get(new ColumnTypeMetadata_v3.Key(name));
+    }
+
+    @JsonIgnore public List<ParquetDirectoryMetadata_v3> getDirectories() {
+      return directories;
+    }
+
+    @JsonIgnore @Override public List<? extends ParquetFileMetadata> getFiles() {
+      return files;
+    }
+
+    @SuppressWarnings("unchecked")
+    @JsonIgnore @Override public void assignFiles(List<? extends ParquetFileMetadata> newFiles) {
+      this.files = (List<ParquetFileMetadata_v3>) newFiles;
+    }
+
+    @Override public boolean hasColumnMetadata() {
+      return true;
+    }
+
+    @JsonIgnore @Override public PrimitiveTypeName getPrimitiveType(String[] columnName) {
+      return getColumnTypeInfo(columnName).primitiveType;
+    }
+
+    @JsonIgnore @Override public OriginalType getOriginalType(String[] columnName) {
+      return getColumnTypeInfo(columnName).originalType;
+    }
+
+    @JsonIgnore @Override public ParquetTableMetadataBase clone() {
+      return new ParquetTableMetadata_v3(files, directories, columnTypeInfo);
+    }
+  }
+
+
+  /**
+   * Struct which contains the metadata for a single parquet file
+   */
+  public static class ParquetFileMetadata_v3 extends ParquetFileMetadata {
+    @JsonProperty public String path;
+    @JsonProperty public Long length;
+    @JsonProperty public List<RowGroupMetadata_v3> rowGroups;
+    @JsonProperty public Long modificationTime;
+
+    public ParquetFileMetadata_v3() {
+      super();
+    }
+
+    public ParquetFileMetadata_v3(String path, Long length, List<RowGroupMetadata_v3> rowGroups, Long modificationTime) {
+      this.path = path;
+      this.length = length;
+      this.rowGroups = rowGroups;
+      this.modificationTime = modificationTime;
+    }
+
+    @Override public String toString() {
+      return String.format("path: %s rowGroups: %s", path, rowGroups);
+    }
+
+    @JsonIgnore @Override public String getPath() {
+      return path;
+    }
+
+    @JsonIgnore @Override public Long getLength() {
+      return length;
+    }
+
+    @JsonIgnore @Override public List<? extends RowGroupMetadata> getRowGroups() {
+      return rowGroups;
+    }
+
+    @JsonIgnore public Long getModificationTime() {
+      return modificationTime;
+    }
+  }
+
+  /**
+   * Struct which contains the metadata for a single directory
+   */
+  public static class ParquetDirectoryMetadata_v3 extends ParquetDirectoryMetadata {
+    @JsonProperty public String path;
+    @JsonProperty public Long modificationTime;
+
+    public ParquetDirectoryMetadata_v3() {
+      super();
+    }
+
+    public ParquetDirectoryMetadata_v3(String path, Long modificationTime) {
+      this.path = path;
+      this.modificationTime = modificationTime;
+    }
+
+    @Override public String toString() {
+      return String.format("path: %s", path);
+    }
+
+    @JsonIgnore @Override public String getPath() {
+      return path;
+    }
+
+    @JsonIgnore public Long getModificationTime() {
+      return modificationTime;
+    }
+  }
+
+  /**
+   * A struct that contains the metadata for a parquet row group
+   */
+  public static class RowGroupMetadata_v3 extends RowGroupMetadata {
+    @JsonProperty public Long start;
+    @JsonProperty public Long length;
+    @JsonProperty public Long rowCount;
+    @JsonProperty public Map<String, Float> hostAffinity;
+    @JsonProperty public List<ColumnMetadata_v3> columns;
+
+    public RowGroupMetadata_v3() {
+      super();
+    }
+
+    public RowGroupMetadata_v3(Long start, Long length, Long rowCount, Map<String, Float> hostAffinity,
+        List<ColumnMetadata_v3> columns) {
+      this.start = start;
+      this.length = length;
+      this.rowCount = rowCount;
+      this.hostAffinity = hostAffinity;
+      this.columns = columns;
+    }
+
+    @Override public Long getStart() {
+      return start;
+    }
+
+    @Override public Long getLength() {
+      return length;
+    }
+
+    @Override public Long getRowCount() {
+      return rowCount;
+    }
+
+    @Override public Map<String, Float> getHostAffinity() {
+      return hostAffinity;
+    }
+
+    @Override public List<? extends ColumnMetadata> getColumns() {
+      return columns;
+    }
+  }
+
+
+  public static class ColumnTypeMetadata_v3 {
+    @JsonProperty public String[] name;
+    @JsonProperty public PrimitiveTypeName primitiveType;
+    @JsonProperty public OriginalType originalType;
+
+    // Key to find by name only
+    @JsonIgnore private Key key;
+
+    public ColumnTypeMetadata_v3() {
+      super();
+    }
+
+    public ColumnTypeMetadata_v3(String[] name, PrimitiveTypeName primitiveType, OriginalType originalType) {
+      this.name = name;
+      this.primitiveType = primitiveType;
+      this.originalType = originalType;
+      this.key = new Key(name);
+    }
+
+    @JsonIgnore private Key key() {
+      return this.key;
+    }
+
+    private static class Key {
+      private String[] name;
+      private int hashCode = 0;
+
+      public Key(String[] name) {
+        this.name = name;
+      }
+
+      @Override public int hashCode() {
+        if (hashCode == 0) {
+          hashCode = Arrays.hashCode(name);
+        }
+        return hashCode;
+      }
+
+      @Override public boolean equals(Object obj) {
+        if (obj == null) {
+          return false;
+        }
+        if (getClass() != obj.getClass()) {
+          return false;
+        }
+        final Key other = (Key) obj;
+        return Arrays.equals(this.name, other.name);
+      }
+
+      @Override public String toString() {
+        String s = null;
+        for (String namePart : name) {
+          if (s != null) {
+            s += ".";
+            s += namePart;
+          } else {
+            s = namePart;
+          }
+        }
+        return s;
+      }
 
       public static class DeSerializer extends KeyDeserializer {
 
@@ -1096,7 +1402,7 @@ public class Metadata {
   /**
    * A struct that contains the metadata for a column in a parquet file
    */
-  public static class ColumnMetadata_v2 extends ColumnMetadata {
+  public static class ColumnMetadata_v3 extends ColumnMetadata {
     // Use a string array for name instead of Schema Path to make serialization easier
     @JsonProperty public String[] name;
     @JsonProperty public Long nulls;
@@ -1105,11 +1411,11 @@ public class Metadata {
 
     @JsonIgnore private PrimitiveTypeName primitiveType;
 
-    public ColumnMetadata_v2() {
+    public ColumnMetadata_v3() {
       super();
     }
 
-    public ColumnMetadata_v2(String[] name, PrimitiveTypeName primitiveType, Object minValue, Object maxValue, Long nulls) {
+    public ColumnMetadata_v3(String[] name, PrimitiveTypeName primitiveType, Object minValue, Object maxValue, Long nulls) {
       this.name = name;
       this.minValue = minValue;
       this.maxValue = maxValue;
@@ -1138,7 +1444,8 @@ public class Metadata {
       return minValue != null && maxValue != null && minValue.equals(maxValue) && Long.valueOf(0).equals(this.getNulls());
     }
 
-    @Override public Object getMinValue() {
+    @Override
+    public Object getMinValue() {
       return minValue;
     }
 
@@ -1154,8 +1461,8 @@ public class Metadata {
       return null;
     }
 
-    public static class DeSerializer extends JsonDeserializer<ColumnMetadata_v2> {
-      @Override public ColumnMetadata_v2 deserialize(JsonParser jp, DeserializationContext ctxt)
+    public static class DeSerializer extends JsonDeserializer<ColumnMetadata_v3> {
+      @Override public ColumnMetadata_v3 deserialize(JsonParser jp, DeserializationContext ctxt)
           throws IOException, JsonProcessingException {
         return null;
       }
@@ -1163,9 +1470,9 @@ public class Metadata {
 
 
     // We use a custom serializer and write only non null values.
-    public static class Serializer extends JsonSerializer<ColumnMetadata_v2> {
+    public static class Serializer extends JsonSerializer<ColumnMetadata_v3> {
       @Override
-      public void serialize(ColumnMetadata_v2 value, JsonGenerator jgen, SerializerProvider provider)
+      public void serialize(ColumnMetadata_v3 value, JsonGenerator jgen, SerializerProvider provider)
           throws IOException, JsonProcessingException {
         jgen.writeStartObject();
         jgen.writeArrayFieldStart("name");
@@ -1199,4 +1506,3 @@ public class Metadata {
     }
   }
 }
-
