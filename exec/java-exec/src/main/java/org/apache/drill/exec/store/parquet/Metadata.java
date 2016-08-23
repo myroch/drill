@@ -87,12 +87,24 @@ public class Metadata {
    * Create the parquet metadata file for the directory at the given path, and for any subdirectories
    *
    * @param fs
-   * @param path
+   * @param pathStr
    * @throws IOException
    */
-  public static void createMeta(FileSystem fs, String path) throws IOException {
+  public static void createMeta(FileSystem fs, String pathStr, boolean incremental) throws IOException {
     Metadata metadata = new Metadata(fs);
-    metadata.createMetaFilesRecursively(new Path(path), null);
+    Path path = new Path(pathStr);
+    if (!incremental) {
+      metadata.createMetaFilesRecursively(path, null);
+      return;
+    }
+    Path metaPath = new Path(path, Metadata.METADATA_FILENAME);
+    if (!fs.exists(metaPath)) {
+      metadata.createMetaFilesRecursively(path, null);
+      return;
+    }
+    ParquetTableMetadataBase meta = metadata.readBlockMeta(metaPath, false);
+    // file existed and read successfully, just update it
+    metadata.createMetaFilesRecursively(path, meta);
   }
 
   /**
@@ -133,7 +145,7 @@ public class Metadata {
    */
   public static ParquetTableMetadataBase readBlockMeta(FileSystem fs, String path) throws IOException {
     Metadata metadata = new Metadata(fs);
-    return metadata.readBlockMeta(path);
+    return metadata.readBlockMeta(new Path(path), true);
   }
 
   private Metadata(FileSystem fs) {
@@ -478,9 +490,8 @@ public class Metadata {
    * @return
    * @throws IOException
    */
-  private ParquetTableMetadataBase readBlockMeta(String path) throws IOException {
+  private ParquetTableMetadataBase readBlockMeta(Path path, boolean checkIsTableModified) throws IOException {
     Stopwatch timer = Stopwatch.createStarted();
-    Path p = new Path(path);
     ObjectMapper mapper = new ObjectMapper();
 
     final SimpleModule serialModule = new SimpleModule();
@@ -493,13 +504,13 @@ public class Metadata {
     mapper.registerModule(serialModule);
     mapper.registerModule(module);
     mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    FSDataInputStream is = fs.open(p);
+    FSDataInputStream is = fs.open(path);
 
     ParquetTableMetadataBase parquetTableMetadata = mapper.readValue(is, ParquetTableMetadataBase.class);
     logger.info("Took {} ms to read metadata from cache file", timer.elapsed(TimeUnit.MILLISECONDS));
     timer.stop();
-    if (tableModified(parquetTableMetadata, p)) {
-      parquetTableMetadata = createMetaFilesRecursively(Path.getPathWithoutSchemeAndAuthority(p.getParent()), parquetTableMetadata);
+    if (checkIsTableModified && tableModified(parquetTableMetadata, path)) {
+      parquetTableMetadata = createMetaFilesRecursively(path.getParent(), parquetTableMetadata);
     }
     return parquetTableMetadata;
   }
@@ -518,19 +529,24 @@ public class Metadata {
     if (!(tableMetadata instanceof ParquetTableMetadata_v3)) {
       return true; // update old meta
     }
+    int checked = 0;
+    Stopwatch timer = Stopwatch.createStarted();
     long metaFileModifyTime = fs.getFileStatus(metaFilePath).getModificationTime();
     FileStatus directoryStatus = fs.getFileStatus(metaFilePath.getParent());
+    checked++;
     if (directoryStatus.getModificationTime() > metaFileModifyTime) {
       return true;
     }
-    // performance: not checking all directories, just root - requires calling refresh meta after each change in subdirectory!
-//    ParquetTableMetadata_v3 metadata = (ParquetTableMetadata_v3) tableMetadata;
-//    for (ParquetDirectoryMetadata_v3 directory : metadata.getDirectories()) {
-//      directoryStatus = fs.getFileStatus(new Path(directory.getPath()));
-//      if (directory.getTimestamp() == null || directoryStatus.getModificationTime() > directory.getTimestamp().longValue()) {
-//        return true;
-//      }
-//    }
+    ParquetTableMetadata_v3 metadata = (ParquetTableMetadata_v3) tableMetadata;
+    for (ParquetDirectoryMetadata_v3 directory : metadata.getDirectories()) {
+      directoryStatus = fs.getFileStatus(new Path(directory.getPath()));
+      checked++;
+      if (directory.getModificationTime() == null || directoryStatus.getModificationTime() > directory.getModificationTime().longValue()) {
+        logger.info("Took {} ms to check for table modification on {} dirs with result: Modified", timer.stop().elapsed(TimeUnit.MILLISECONDS), checked);
+        return true;
+      }
+    }
+    logger.info("Took {} ms to check for table modification on {} dirs with result: Unmodified", timer.stop().elapsed(TimeUnit.MILLISECONDS), checked);
     return false;
   }
 

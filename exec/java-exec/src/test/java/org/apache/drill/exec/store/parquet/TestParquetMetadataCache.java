@@ -17,19 +17,21 @@
  */
 package org.apache.drill.exec.store.parquet;
 
-import com.google.common.base.Joiner;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import java.io.File;
+import java.nio.file.Files;
+
+import org.apache.commons.io.FileUtils;
 import org.apache.drill.PlanTestBase;
 import org.apache.drill.common.util.TestTools;
-import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.fs.Path;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.io.File;
-import java.nio.file.Files;
-
-import static org.junit.Assert.assertEquals;
+import com.google.common.base.Joiner;
 
 public class TestParquetMetadataCache extends PlanTestBase {
   private static final String WORKING_PATH = TestTools.getWorkingPath();
@@ -144,11 +146,28 @@ public class TestParquetMetadataCache extends PlanTestBase {
     test("use dfs_test.tmp");
     test(String.format("create table `%s/t1` as select * from cp.`tpch/nation.parquet`", tableName));
     test(String.format("refresh table metadata %s", tableName));
-    checkForMetadataFile(tableName);
+    File file1 = checkForMetadataFile(tableName);
+    long file1Modified = file1.lastModified();
     Thread.sleep(1000);
     test(String.format("create table `%s/t2` as select * from cp.`tpch/nation.parquet`", tableName));
     int rowCount = testSql(String.format("select * from %s", tableName));
     Assert.assertEquals(50, rowCount);
+    File file2 = checkForMetadataFile(tableName);
+    assertTrue(file2.lastModified() > file1Modified);
+  }
+
+  @Test
+  public void testIncrementalMetadata() throws Exception {
+    String tableName = "nation_ctas_incremental";
+    test("use dfs_test.tmp");
+    test(String.format("create table `%s/t1` as select * from cp.`tpch/nation.parquet`", tableName));
+    test(String.format("refresh table metadata %s", tableName));
+    File file1 = new File(checkForMetadataFile(tableName).getParentFile(), "t1/"+Metadata.METADATA_FILENAME);
+    long file1Modified = file1.lastModified();
+    Thread.sleep(1000);
+    test(String.format("refresh table metadata %s incremental", tableName)); // no change
+    File file2 = new File(checkForMetadataFile(tableName).getParentFile(), "t1/"+Metadata.METADATA_FILENAME);
+    assertTrue(file2.lastModified() == file1Modified);
   }
 
   @Test
@@ -205,9 +224,11 @@ public class TestParquetMetadataCache extends PlanTestBase {
         .go();
   }
 
-  private void checkForMetadataFile(String table) throws Exception {
+  private File checkForMetadataFile(String table) throws Exception {
     String tmpDir = getDfsTestTmpSchemaLocation();
     String metaFile = Joiner.on("/").join(tmpDir, table, Metadata.METADATA_FILENAME);
-    Assert.assertTrue(Files.exists(new File(metaFile).toPath()));
+    File file = new File(metaFile);
+    Assert.assertTrue(Files.exists(file.toPath()));
+    return file;
   }
 }

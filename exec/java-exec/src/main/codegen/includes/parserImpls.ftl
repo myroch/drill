@@ -265,16 +265,16 @@ SqlNode SqlRefreshMetadata() :
 {
     SqlParserPos pos;
     SqlIdentifier tblName;
-    SqlNodeList fieldList;
-    SqlNode query;
+    boolean incremental = false;
 }
 {
     <REFRESH> { pos = getPos(); }
     <TABLE>
     <METADATA>
     tblName = CompoundIdentifier()
+    [ <INCREMENTAL> { incremental = true; } ]
     {
-        return new SqlRefreshMetadata(pos, tblName);
+        return new SqlRefreshMetadata(pos, tblName, incremental);
     }
 }
 

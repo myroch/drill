@@ -36,7 +36,8 @@
     "USE",
     "FILES",
     "REFRESH",
-    "METADATA"
+    "METADATA",
+    "INCREMENTAL"
   ]
 
   # List of methods for parsing custom SQL statements.

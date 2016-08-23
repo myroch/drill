@@ -110,7 +110,7 @@ public class RefreshMetadataHandler extends DefaultSqlHandler {
         return notSupported(tableName);
       }
 
-      Metadata.createMeta(fs, selectionRoot);
+      Metadata.createMeta(fs, selectionRoot, refreshTable.isIncremental());
       return direct(true, "Successfully updated metadata for table %s.", tableName);
 
     } catch(Exception e) {
