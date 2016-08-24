@@ -17,6 +17,7 @@
  */
 package org.apache.drill.exec.store.parquet;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -178,8 +179,13 @@ public class Metadata {
   /**
    * Create the parquet metadata file for the directory at the given path, and for any subdirectories
    *
-   * @param path
-   * @throws IOException
+   * @param currentPath current directory path
+   * @param files cache of files metadata
+   * @param directories cache of directories metadata
+   * @param columns cache of schema
+   * @param updated updated counter
+   * @param cached cached counter
+   * @throws IOException I/O ex.
    */
   private ParquetTableMetadata_v3 createMetaFilesRecursively(final Path currentPath,
       final Map<String, ParquetFileMetadata_v3> files,
@@ -197,15 +203,36 @@ public class Metadata {
 
     for (final FileStatus file : fs.listStatus(currentPath, DRILL_PATH_FILTER)) {
       Path filePath = file.getPath();
-      if (file.isDirectory()) {
+      if (file.isDirectory()) { // directory
         String directoryPathStr = filePath.toString();
         ParquetDirectoryMetadata_v3 oldDirectoryMeta = directories.get(directoryPathStr);
+        boolean updatedDir = false;
         if (oldDirectoryMeta==null || oldDirectoryMeta.modificationTime == null || oldDirectoryMeta.modificationTime.longValue() < file.getModificationTime()) {
           // updated or new directory
+          updatedDir = true;
+        }
+        if (!updatedDir) {
+          // seems to be old directory - validate all children folders timestamps to be sure that really no update
+          String subDirectoryPathPrefix = directoryPathStr + '/';
+          try {
+            for (ParquetDirectoryMetadata_v3 oldDirMeta : directories.values()) {
+              if (oldDirMeta.path.startsWith(subDirectoryPathPrefix)) { // directories are with schema and authority
+                FileStatus subDirectory = fs.getFileStatus(new Path(oldDirMeta.path));
+                if (!subDirectory.isDirectory() || oldDirMeta.getModificationTime()==null || oldDirMeta.modificationTime.longValue() < subDirectory.getModificationTime()) {
+                  updatedDir = true;
+                  break;
+                }
+              }
+            }
+          } catch (FileNotFoundException e) {
+            updatedDir = true;
+          }
+        }
+        if (updatedDir) {
           ParquetTableMetadata_v3 subTableMetadata = createMetaFilesRecursively(filePath, files, directories, columns, updated, cached);
           metaDataList.addAll(subTableMetadata.files);
           directoryList.addAll(subTableMetadata.directories);
-       // add directory into the list (with scheme and authority) with new modification time (as meta file was just created there)
+          // add directory into the list (with scheme and authority) with new modification time (as meta file was just created there)
           directoryList.add(new ParquetDirectoryMetadata_v3(directoryPathStr, fs.getFileStatus(filePath).getModificationTime()));
           // Merge the schema from the child level into the current level
           columnTypeInfoSet.putAll(subTableMetadata.columnTypeInfo);
@@ -225,7 +252,7 @@ public class Metadata {
           }
           columnTypeInfoSet.putAll(columns); // keep old schema
         }
-      } else {
+      } else { // file
         String filePathWithoutSchemeAndAuthorityStr = Path.getPathWithoutSchemeAndAuthority(filePath).toString();
         ParquetFileMetadata_v3 oldFileMeta = files.get(filePathWithoutSchemeAndAuthorityStr);
         if (oldFileMeta == null || oldFileMeta.modificationTime == null || oldFileMeta.modificationTime.longValue() < file.getModificationTime()) {

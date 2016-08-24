@@ -160,14 +160,21 @@ public class TestParquetMetadataCache extends PlanTestBase {
   public void testIncrementalMetadata() throws Exception {
     String tableName = "nation_ctas_incremental";
     test("use dfs_test.tmp");
-    test(String.format("create table `%s/t1` as select * from cp.`tpch/nation.parquet`", tableName));
+    test(String.format("create table `%s/d1/d2/t1` as select * from cp.`tpch/nation.parquet`", tableName));
     test(String.format("refresh table metadata %s", tableName));
-    File file1 = new File(checkForMetadataFile(tableName).getParentFile(), "t1/"+Metadata.METADATA_FILENAME);
+    File file1 = new File(checkForMetadataFile(tableName).getParentFile(), "d1/"+Metadata.METADATA_FILENAME);
     long file1Modified = file1.lastModified();
     Thread.sleep(1000);
     test(String.format("refresh table metadata %s incremental", tableName)); // no change
-    File file2 = new File(checkForMetadataFile(tableName).getParentFile(), "t1/"+Metadata.METADATA_FILENAME);
+    File file2 = new File(checkForMetadataFile(tableName).getParentFile(), "d1/"+Metadata.METADATA_FILENAME);
     assertTrue(file2.lastModified() == file1Modified);
+    test(String.format("create table `%s/d1/d2/t2` as select * from cp.`tpch/nation.parquet`", tableName));
+    Thread.sleep(1000);
+    test(String.format("refresh table metadata %s incremental", tableName)); // should find the change
+    File file3 = new File(checkForMetadataFile(tableName).getParentFile(), "d1/"+Metadata.METADATA_FILENAME);
+    assertTrue(file3.lastModified() > file1Modified);
+    int rowCount = testSql(String.format("select * from %s", tableName));
+    Assert.assertEquals(50, rowCount);
   }
 
   @Test
