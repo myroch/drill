@@ -146,7 +146,7 @@ public class Metadata {
    */
   public static ParquetTableMetadataBase readBlockMeta(FileSystem fs, String path) throws IOException {
     Metadata metadata = new Metadata(fs);
-    return metadata.readBlockMeta(new Path(path), true);
+    return metadata.readBlockMeta(new Path(path), false);
   }
 
   private Metadata(FileSystem fs) {
@@ -154,8 +154,8 @@ public class Metadata {
   }
 
   private ParquetTableMetadata_v3 createMetaFilesRecursively(final Path currentPath, ParquetTableMetadataBase oldMetadata) throws IOException {
-    final Map<String, ParquetFileMetadata_v3> files = new HashMap<String, ParquetFileMetadata_v3>();
-    final Map<String, ParquetDirectoryMetadata_v3> directories = new HashMap<String, ParquetDirectoryMetadata_v3>();
+    final Map<String, ParquetFileMetadata_v3> files = new HashMap<>();
+    final Map<String, ParquetDirectoryMetadata_v3> directories = new HashMap<>();
     MutableInt updated = new MutableInt();
     MutableInt cached = new MutableInt();
     final Stopwatch watch = Stopwatch.createStarted();
@@ -318,7 +318,7 @@ public class Metadata {
     ParquetTableMetadata_v3 tableMetadata = new ParquetTableMetadata_v3();
     List<ParquetFileMetadata_v3> fileMetadataList = getParquetFileMetadata_v3(tableMetadata, fileStatuses);
     tableMetadata.files = fileMetadataList;
-    tableMetadata.directories = new ArrayList<ParquetDirectoryMetadata_v3>();
+    tableMetadata.directories = new ArrayList<>();
     return tableMetadata;
   }
 
