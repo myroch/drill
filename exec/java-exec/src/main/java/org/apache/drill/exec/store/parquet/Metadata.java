@@ -20,13 +20,13 @@ package org.apache.drill.exec.store.parquet;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Iterator;
-
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.util.DrillVersionInfo;
 import org.apache.drill.exec.store.AbstractRecordReader;
@@ -52,13 +52,12 @@ import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.parquet.schema.Type;
-import org.apache.commons.lang3.tuple.Pair;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonTypeName;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonGenerator.Feature;
@@ -66,12 +65,10 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.KeyDeserializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.module.afterburner.AfterburnerModule;
@@ -82,9 +79,7 @@ import com.google.common.collect.Maps;
 public class Metadata {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(Metadata.class);
 
-  public static final String[] OLD_METADATA_FILENAMES = {".drill.parquet_metadata.v2"};
   public static final String METADATA_FILENAME = ".drill.parquet_metadata";
-  public static final String METADATA_DIRECTORIES_FILENAME = ".drill.parquet_metadata_directories";
 
   private final FileSystem fs;
   private final ParquetFormatConfig formatConfig;
@@ -206,14 +201,10 @@ public class Metadata {
     }
     parquetTableMetadata.columnTypeInfo.putAll(columnTypeInfoSet);
 
-    for (String oldname : OLD_METADATA_FILENAMES) {
-      fs.delete(new Path(p, oldname), false);
-    }
     writeFile(parquetTableMetadata, new Path(p, METADATA_FILENAME));
 
     if (directoryList.size() > 0 && childFiles.size() == 0) {
       ParquetTableMetadataDirs parquetTableMetadataDirs = new ParquetTableMetadataDirs(directoryList);
-      writeFile(parquetTableMetadataDirs, new Path(p, METADATA_DIRECTORIES_FILENAME));
       logger.info("Creating metadata files recursively took {} ms", timer.elapsed(TimeUnit.MILLISECONDS));
       timer.stop();
       return Pair.of(parquetTableMetadata, parquetTableMetadataDirs);
@@ -256,7 +247,7 @@ public class Metadata {
     ParquetTableMetadata_v3 tableMetadata = new ParquetTableMetadata_v3();
     List<ParquetFileMetadata_v3> fileMetadataList = getParquetFileMetadata_v3(tableMetadata, fileStatuses);
     tableMetadata.files = fileMetadataList;
-    tableMetadata.directories = new ArrayList<String>();
+    tableMetadata.directories = new ArrayList<>();
     return tableMetadata;
   }
 
@@ -509,19 +500,6 @@ public class Metadata {
     os.close();
   }
 
-  private void writeFile(ParquetTableMetadataDirs parquetTableMetadataDirs, Path p) throws IOException {
-    JsonFactory jsonFactory = new JsonFactory();
-    jsonFactory.configure(Feature.AUTO_CLOSE_TARGET, false);
-    jsonFactory.configure(JsonParser.Feature.AUTO_CLOSE_SOURCE, false);
-    ObjectMapper mapper = new ObjectMapper(jsonFactory);
-    SimpleModule module = new SimpleModule();
-    mapper.registerModule(module);
-    FSDataOutputStream os = fs.create(p);
-    mapper.writerWithDefaultPrettyPrinter().writeValue(os, parquetTableMetadataDirs);
-    os.flush();
-    os.close();
-  }
-
   /**
    * Read the parquet metadata from a file
    *
@@ -557,24 +535,13 @@ public class Metadata {
       alreadyCheckedModification = metaContext.getStatus(parentDir.toString());
     }
 
-    if (dirsOnly) {
-      parquetTableMetadataDirs = mapper.readValue(is, ParquetTableMetadataDirs.class);
-      logger.info("Took {} ms to read directories from directory cache file", timer.elapsed(TimeUnit.MILLISECONDS));
-      timer.stop();
-      if (!alreadyCheckedModification && tableModified(parquetTableMetadataDirs.getDirectories(), p, parentDir, metaContext)) {
-        parquetTableMetadataDirs =
-            (createMetaFilesRecursively(Path.getPathWithoutSchemeAndAuthority(p.getParent()).toString())).getRight();
-        newMetadata = true;
-      }
-    } else {
-      parquetTableMetadata = mapper.readValue(is, ParquetTableMetadataBase.class);
-      logger.info("Took {} ms to read metadata from cache file", timer.elapsed(TimeUnit.MILLISECONDS));
-      timer.stop();
-      if (!alreadyCheckedModification && tableModified(parquetTableMetadata.getDirectories(), p, parentDir, metaContext)) {
-        parquetTableMetadata =
-            (createMetaFilesRecursively(Path.getPathWithoutSchemeAndAuthority(p.getParent()).toString())).getLeft();
-        newMetadata = true;
-      }
+    parquetTableMetadata = mapper.readValue(is, ParquetTableMetadataBase.class);
+    logger.info("Took {} ms to read metadata from cache file", timer.elapsed(TimeUnit.MILLISECONDS));
+    timer.stop();
+    if (!alreadyCheckedModification && tableModified(parquetTableMetadata.getDirectories(), p, parentDir, metaContext)) {
+      parquetTableMetadata =
+          (createMetaFilesRecursively(Path.getPathWithoutSchemeAndAuthority(p.getParent()).toString())).getLeft();
+      newMetadata = true;
 
       // DRILL-5009: Remove the RowGroup if it is empty
       List<? extends ParquetFileMetadata> files = parquetTableMetadata.getFiles();
@@ -587,14 +554,13 @@ public class Metadata {
           }
         }
       }
-
     }
+    parquetTableMetadataDirs = new ParquetTableMetadataDirs(parquetTableMetadata.getDirectories());
 
     if (newMetadata && metaContext != null) {
       // if new metadata files were created, invalidate the existing metadata context
       metaContext.clear();
     }
-
   }
 
   /**
@@ -671,6 +637,7 @@ public class Metadata {
 
     @JsonIgnore public abstract boolean isRowGroupPrunable();
 
+    @Override
     @JsonIgnore public abstract ParquetTableMetadataBase clone();
 
     @JsonIgnore public abstract String getDrillVersion();
@@ -971,6 +938,7 @@ public class Metadata {
      *
      * @param min
      */
+    @Override
     @JsonProperty(value = "min")
     public void setMin(Object min) {
       this.min = min;
@@ -981,6 +949,7 @@ public class Metadata {
      *
      * @param max
      */
+    @Override
     @JsonProperty(value = "max")
     public void setMax(Object max) {
       this.max = max;
@@ -1293,6 +1262,7 @@ public class Metadata {
       this.primitiveType = primitiveType;
     }
 
+    @Override
     @JsonProperty(value = "mxValue") public void setMax(Object mxValue) {
       this.mxValue = mxValue;
     }
@@ -1660,10 +1630,12 @@ public class Metadata {
       this.primitiveType = primitiveType;
     }
 
+    @Override
     @JsonProperty(value = "minValue") public void setMin(Object minValue) {
       this.minValue = minValue;
     }
 
+    @Override
     @JsonProperty(value = "maxValue") public void setMax(Object maxValue) {
       this.maxValue = maxValue;
     }
