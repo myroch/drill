@@ -1418,7 +1418,7 @@ public class Metadata {
     }
 
   }
-  
+
   /**
    * Struct which contains the metadata for a single directory
    */

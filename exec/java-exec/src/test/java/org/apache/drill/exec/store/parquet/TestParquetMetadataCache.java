@@ -135,7 +135,7 @@ public class TestParquetMetadataCache extends PlanTestBase {
 
     testPlanMatchingPatterns(query, new String[]{numFilesPattern, usedMetaPattern}, new String[] {});
   }
-  
+
   @Test
   public void testIncrementalMetadata() throws Exception {
     String tableName = "nation_ctas_incremental";
