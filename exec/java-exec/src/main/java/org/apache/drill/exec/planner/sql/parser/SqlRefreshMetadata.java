@@ -43,15 +43,21 @@ public class SqlRefreshMetadata extends DrillSqlCall {
   public static final SqlSpecialOperator OPERATOR = new SqlSpecialOperator("REFRESH_TABLE_METADATA", SqlKind.OTHER) {
     @Override
     public SqlCall createCall(SqlLiteral functionQualifier, SqlParserPos pos, SqlNode... operands) {
-      return new SqlRefreshMetadata(pos, (SqlIdentifier) operands[0]);
+      return new SqlRefreshMetadata(pos, (SqlIdentifier) operands[0], (SqlLiteral) operands[1]);
     }
   };
 
   private SqlIdentifier tblName;
+  private boolean incremental = false;
 
-  public SqlRefreshMetadata(SqlParserPos pos, SqlIdentifier tblName){
+  public SqlRefreshMetadata(SqlParserPos pos, SqlIdentifier tblName, SqlLiteral incremental) {
+    this(pos, tblName, incremental.booleanValue());
+  }
+
+  public SqlRefreshMetadata(SqlParserPos pos, SqlIdentifier tblName, boolean incremental) {
     super(pos);
     this.tblName = tblName;
+    this.incremental = incremental;
   }
 
   @Override
@@ -63,6 +69,7 @@ public class SqlRefreshMetadata extends DrillSqlCall {
   public List<SqlNode> getOperandList() {
     List<SqlNode> ops = Lists.newArrayList();
     ops.add(tblName);
+    ops.add(SqlLiteral.createBoolean(incremental, SqlParserPos.ZERO));
     return ops;
   }
 
@@ -72,6 +79,9 @@ public class SqlRefreshMetadata extends DrillSqlCall {
     writer.keyword("TABLE");
     writer.keyword("METADATA");
     tblName.unparse(writer, leftPrec, rightPrec);
+    if (incremental) {
+      writer.keyword("INCREMENTAL");
+    }
   }
 
   public String getName() {
@@ -94,4 +104,6 @@ public class SqlRefreshMetadata extends DrillSqlCall {
   public AbstractSqlHandler getSqlHandler(SqlHandlerConfig config) {
     return new RefreshMetadataHandler(config);
   }
+
+  public boolean isIncremental() { return incremental; }
 }

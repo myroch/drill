@@ -113,7 +113,7 @@ public class RefreshMetadataHandler extends DefaultSqlHandler {
       if (!(formatConfig instanceof ParquetFormatConfig)) {
         formatConfig = new ParquetFormatConfig();
       }
-      Metadata.createMeta(fs, selectionRoot, (ParquetFormatConfig) formatConfig);
+      Metadata.createMeta(fs, selectionRoot, (ParquetFormatConfig) formatConfig, refreshTable.isIncremental());
       return direct(true, "Successfully updated metadata for table %s.", tableName);
 
     } catch(Exception e) {

@@ -108,6 +108,7 @@ public class ParquetFormatPlugin implements FormatPlugin{
     return config;
   }
 
+  @Override
   public DrillbitContext getContext() {
     return this.context;
   }
@@ -174,6 +175,7 @@ public class ParquetFormatPlugin implements FormatPlugin{
     return storageConfig;
   }
 
+  @Override
   public String getName(){
     return name;
   }
@@ -213,7 +215,7 @@ public class ParquetFormatPlugin implements FormatPlugin{
         FileSystemPlugin fsPlugin, String storageEngineName, String userName)
         throws IOException {
       if(selection.containsDirectories(fs)) {
-        Path dirMetaPath = new Path(selection.getSelectionRoot(), Metadata.METADATA_DIRECTORIES_FILENAME);
+        Path dirMetaPath = new Path(selection.getSelectionRoot(), Metadata.METADATA_FILENAME);
         // check if the metadata 'directories' file exists; if it does, there is an implicit assumption that
         // the directory is readable since the metadata 'directories' file cannot be created otherwise.  Note
         // that isDirReadable() does a similar check with the metadata 'cache' file.

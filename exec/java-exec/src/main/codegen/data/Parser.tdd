@@ -37,6 +37,7 @@
     "FILES",
     "REFRESH",
     "METADATA",
+    "INCREMENTAL",
     "DATABASE",
     "IF",
     "JAR"
