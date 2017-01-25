@@ -614,10 +614,17 @@ public class Metadata {
     parquetTableMetadata = mapper.readValue(is, ParquetTableMetadataBase.class);
     logger.info("Took {} ms to read metadata from cache file", timer.elapsed(TimeUnit.MILLISECONDS));
     timer.stop();
-    if (!alreadyCheckedModification && tableModified(parquetTableMetadata.getDirectories(), p, parentDir, metaContext)) {
+    if (!(parquetTableMetadata instanceof ParquetTableMetadata_v3)) {
+      createMetaFilesRecursively(p.getParent()); // regenerate
+      newMetadata = true;
+    }
+    ParquetTableMetadata_v3 casted = (ParquetTableMetadata_v3) parquetTableMetadata;
+    if (!alreadyCheckedModification && tableModified(casted.getParquetDirectoryMetadatas(), metaContext)) {
       createMetaFilesRecursively(p.getParent()); // will reuse already generated meta and do incremental generation only
       newMetadata = true;
-
+    }
+    parquetTableMetadataDirs = new ParquetTableMetadataDirs(parquetTableMetadata.getDirectories());
+    if (newMetadata) {
       // DRILL-5009: Remove the RowGroup if it is empty
       List<? extends ParquetFileMetadata> files = parquetTableMetadata.getFiles();
       for (ParquetFileMetadata file : files) {
@@ -630,7 +637,6 @@ public class Metadata {
         }
       }
     }
-    parquetTableMetadataDirs = new ParquetTableMetadataDirs(parquetTableMetadata.getDirectories());
 
     if (newMetadata && metaContext != null) {
       // if new metadata files were created, invalidate the existing metadata context
@@ -643,46 +649,44 @@ public class Metadata {
    * the modification time of the metadata file
    *
    * @param directories
-   * @param metaFilePath
+   * @param metaContext
    * @return
    * @throws IOException
    */
-  private boolean tableModified(List<String> directories, Path metaFilePath,
-      Path parentDir,
+  private boolean tableModified(List<ParquetDirectoryMetadata_v3> directories,
       MetadataContext metaContext)
       throws IOException {
 
     Stopwatch timer = Stopwatch.createStarted();
 
-    if (metaContext != null) {
-      metaContext.setStatus(parentDir.toString());
-    }
-    long metaFileModifyTime = fs.getFileStatus(metaFilePath).getModificationTime();
-    FileStatus directoryStatus = fs.getFileStatus(parentDir);
-    int numDirs = 1;
-    if (directoryStatus.getModificationTime() > metaFileModifyTime) {
-      logger.info("Directory {} was modified. Took {} ms to check modification time of {} directories", directoryStatus.getPath().toString(),
+    int numDirs = 0;
+    String dirStr = null;
+    try {
+      for (ParquetDirectoryMetadata_v3 oldDirectoryMeta : directories) {
+        dirStr = oldDirectoryMeta.getPath();
+        if (metaContext == null || !metaContext.getStatus(dirStr)) {
+          // we haven't checked this directory yet
+          FileStatus directoryStatus = fs.getFileStatus(new Path(dirStr));
+          numDirs++;
+          if (oldDirectoryMeta.modificationTime == null || oldDirectoryMeta.modificationTime.longValue() < directoryStatus.getModificationTime()) {
+            logger.info("Directory {} was modified. Took {} ms to check modification time of {} directories", dirStr,
+                timer.elapsed(TimeUnit.MILLISECONDS),
+                numDirs);
+            return true;
+          } else {
+            if (metaContext != null) {
+              metaContext.setStatus(dirStr);
+            }
+          }
+        }
+      }
+    } catch (FileNotFoundException e) {
+      logger.info("Directory {} was deleted. Took {} ms to check modification time of {} directories", dirStr,
           timer.elapsed(TimeUnit.MILLISECONDS),
           numDirs);
-      timer.stop();
       return true;
     }
-    for (String directory : directories) {
-      numDirs++;
-      if (metaContext != null) {
-        metaContext.setStatus(directory);
-      }
-      directoryStatus = fs.getFileStatus(new Path(directory));
-      if (directoryStatus.getModificationTime() > metaFileModifyTime) {
-        logger.info("Directory {} was modified. Took {} ms to check modification time of {} directories", directoryStatus.getPath().toString(),
-            timer.elapsed(TimeUnit.MILLISECONDS),
-            numDirs);
-        timer.stop();
-        return true;
-      }
-    }
     logger.info("No directories were modified. Took {} ms to check modification time of {} directories", timer.elapsed(TimeUnit.MILLISECONDS), numDirs);
-    timer.stop();
     return false;
   }
 
